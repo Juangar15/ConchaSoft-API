@@ -1,6 +1,6 @@
 const db = require('../db');
 
-exports.obtenerProducto = async (req, res) => {
+exports.obtenerProductos = async (req, res) => {
     try {
         const { id } = req.params;
 
