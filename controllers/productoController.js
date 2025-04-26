@@ -1,15 +1,38 @@
 const db = require('../db');
 
-exports.obtenerProductos = async (req, res) => {
+exports.obtenerProducto = async (req, res) => {
     try {
-        const [productos] = await db.query(`
+        const { id } = req.params;
+
+        // Obtener el producto y la marca
+        const [producto] = await db.query(`
             SELECT producto.*, marca.marca 
             FROM producto 
-            INNER JOIN marca ON producto.id_marca = marca.id
-        `);
-        res.json(productos);
+            INNER JOIN marca ON producto.id_marca = marca.id 
+            WHERE producto.id = ?
+        `, [id]);
+
+        if (producto.length === 0) {
+            return res.status(404).json({ error: 'Producto no encontrado' });
+        }
+
+        const productoData = producto[0];
+
+        // Obtener las tallas disponibles para este producto con su stock
+        const [tallas] = await db.query(`
+            SELECT talla.id_talla, talla.talla AS nombre, producto_talla.cantidad AS stock
+            FROM producto_talla
+            INNER JOIN talla ON producto_talla.id_talla = talla.id_talla
+            WHERE producto_talla.id_producto = ?
+        `, [id]);
+
+        // Agregamos las tallas al objeto producto
+        productoData.tallasDisponibles = tallas;
+
+        res.json(productoData);
     } catch (error) {
-        res.status(500).json({ error: 'Error al obtener los productos' });
+        console.error(error);
+        res.status(500).json({ error: 'Error al obtener el producto con tallas' });
     }
 };
 
