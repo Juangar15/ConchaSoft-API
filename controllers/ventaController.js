@@ -53,9 +53,9 @@ exports.crearVenta = async (req, res) => {
             return res.status(400).json({ error: 'Todos los campos obligatorios deben estar completos y debe incluir al menos un producto' });
         }
 
-        if (estado !== 'Activo' && estado !== 'Anulado') {
+        if (estado !== 'Completado' && estado !== 'Anulado') {
             await connection.rollback();
-            return res.status(400).json({ error: 'El estado de la venta debe ser "Activo" o "Anulado"' });
+            return res.status(400).json({ error: 'El estado de la venta debe ser "Completado" o "Anulado"' });
         }
 
         const [ventaResult] = await connection.execute(
