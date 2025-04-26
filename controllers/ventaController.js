@@ -117,6 +117,7 @@ exports.actualizarVenta = async (req, res) => {
         }
         res.json({ mensaje: 'Venta actualizada correctamente' });
     } catch (error) {
+        console.error('Error al actualizar la venta:', error); // <--- AGREGAR ESTO
         res.status(500).json({ error: 'Error al actualizar la venta' });
     }
 };
