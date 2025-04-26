@@ -49,8 +49,8 @@ exports.crearVenta = async (req, res) => {
 
         const { fecha, tipo_pago, id_cliente, saldo_a_favor = 0, estado, total, productos } = req.body;
 
-        if (!fecha || !tipo_pago || !id_cliente || !estado || !total || !Array.isArray(productos) || productos.length === 0) {
-            await connection.rollback(); // Añadir rollback aquí también
+        if (!fecha || !tipo_pago || !id_cliente || estado === undefined || !total || !Array.isArray(productos) || productos.length === 0) {
+            await connection.rollback();
             return res.status(400).json({ error: 'Todos los campos obligatorios deben estar completos y debe incluir al menos un producto' });
         }
 
@@ -59,7 +59,7 @@ exports.crearVenta = async (req, res) => {
              return res.status(400).json({ error: 'El estado de la venta debe ser "Completado" o "Anulado"' });
         }
 
-
+        // Insertar la venta principal
         const [ventaResult] = await connection.execute(
             'INSERT INTO venta (fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total) VALUES (?, ?, ?, ?, ?, ?)',
             [fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total]
@@ -67,12 +67,13 @@ exports.crearVenta = async (req, res) => {
 
         const idVentaCreada = ventaResult.insertId;
 
+        // Iterar sobre los productos de la venta para insertarlos en venta_prod y actualizar stock
         for (const producto of productos) {
-            const { id_producto, id_talla, cantidad, valor } = producto;
+            const { id_producto, id_talla, cantidad, valor } = producto; // 'cantidad' aquí es la cantidad vendida de este item
 
-            // Paso 1: Encontrar el id de la tabla pivote producto_talla
+            // Paso 1: Encontrar el id de la tabla pivote producto_talla y obtener su cantidad (stock real)
             const [productoTallaResult] = await connection.execute(
-                'SELECT id, stock FROM producto_talla WHERE id_producto = ? AND id_talla = ?', // Seleccionar también el stock actual
+                'SELECT id, cantidad FROM producto_talla WHERE id_producto = ? AND id_talla = ?', // <-- CORREGIDO: USAR 'cantidad' en lugar de 'stock'
                 [id_producto, id_talla]
             );
 
@@ -82,15 +83,13 @@ exports.crearVenta = async (req, res) => {
             }
 
             const idProductoTalla = productoTallaResult[0].id;
-            const stockActual = productoTallaResult[0].stock; // Obtener el stock actual
+            const stockCantidadActual = productoTallaResult[0].cantidad; // <-- CORREGIDO: OBTENER DESDE 'cantidad'
 
-            // ** --- AÑADE ESTA VALIDACIÓN DE STOCK EN EL BACKEND --- **
-            if (estado === 'Completado' && stockActual < cantidad) {
+            // Validar stock en el backend (solo si la venta está completada)
+            if (estado === 'Completado' && stockCantidadActual < cantidad) {
                  await connection.rollback();
-                 return res.status(400).json({ error: `Stock insuficiente para el producto (${id_producto}) y talla (${id_talla}). Stock disponible: ${stockActual}` });
+                 return res.status(400).json({ error: `Stock insuficiente para el producto (${id_producto}) y talla (${id_talla}). Stock disponible: ${stockCantidadActual}` });
             }
-            // ** --- FIN VALIDACIÓN DE STOCK --- **
-
 
             const precioUnitario = valor; // Asumimos que 'valor' enviado desde Flutter es el precio unitario
             const subtotal = cantidad * precioUnitario;
@@ -101,18 +100,17 @@ exports.crearVenta = async (req, res) => {
                 [idVentaCreada, idProductoTalla, cantidad, precioUnitario, subtotal]
             );
 
-            // ** --- AÑADE ESTA PARTE PARA ACTUALIZAR EL STOCK --- **
+            // Paso 3: ACTUALIZAR EL STOCK (cantidad) en producto_talla
             // Solo decrementa el stock si la venta está marcada como 'Completado'
             if (estado === 'Completado') {
                 await connection.execute(
-                    'UPDATE producto_talla SET stock = stock - ? WHERE id = ?',
+                    'UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?', // <-- CORREGIDO: USAR 'cantidad' en lugar de 'stock'
                     [cantidad, idProductoTalla]
                 );
             }
-            // ** --- FIN ACTUALIZACIÓN DE STOCK --- **
         }
 
-        // Si todo salió bien en el bucle, confirma la transacción
+        // Si todo salió bien, confirma la transacción
         await connection.commit();
         res.status(201).json({ mensaje: 'Venta creada correctamente con sus productos', id_venta: idVentaCreada });
 
@@ -120,15 +118,23 @@ exports.crearVenta = async (req, res) => {
         // Si algo falla, revierte la transacción
         await connection.rollback();
         console.error('Error al crear la venta y sus productos:', error);
-        res.status(500).json({ error: 'Error interno al crear la venta y sus productos' }); // Mensaje de error más genérico para el cliente
+         // Intentar enviar un mensaje de error más útil si es un error de base de datos específico
+         let clientErrorMessage = 'Error interno al crear la venta y sus productos';
+         if (error.code === 'ER_BAD_FIELD_ERROR' || error.code === 'ER_NO_REFERENCED_ROW_2') { // Códigos comunes de errores de campo o FK
+             clientErrorMessage = `Error de base de datos: ${error.sqlMessage || error.message}`;
+         } else if (error.message) {
+             clientErrorMessage = `Error al crear venta: ${error.message}`;
+         }
+
+
+        res.status(500).json({ error: clientErrorMessage });
     } finally {
         // Siempre libera la conexión
-        connection.release();
+        if (connection) connection.release();
     }
 };
 
-// Las demás funciones (obtenerVentas, obtenerVenta, anularVenta, actualizarVenta, eliminarVenta)
-// no necesitan cambios para resolver este problema de stock.
+// Las otras funciones del controlador de ventas permanecen igual.
 
 exports.anularVenta = async (req, res) => {
     try {
