@@ -136,23 +136,91 @@ exports.crearVenta = async (req, res) => {
 
 // Las otras funciones del controlador de ventas permanecen igual.
 
+// ... (otras funciones como obtenerVentas, obtenerVenta, crearVenta, etc.) ...
+
 exports.anularVenta = async (req, res) => {
+    const connection = await db.getConnection(); // Usar una conexión para la transacción
     try {
+        await connection.beginTransaction(); // Iniciar la transacción
+
         const { id } = req.params;
-        const [result] = await db.query(
+
+        // Opcional: Verificar el estado actual de la venta antes de anular
+        const [currentSale] = await connection.execute('SELECT estado FROM venta WHERE id = ?', [id]);
+        if (currentSale.length === 0) {
+             await connection.rollback();
+             return res.status(404).json({ error: 'Venta no encontrada' });
+        }
+        if (currentSale[0].estado === 'Anulado') {
+             await connection.rollback();
+             return res.status(400).json({ error: 'Esta venta ya está anulada' });
+        }
+         // Podrías añadir una verificación si solo quieres devolver stock de ventas 'Completado'
+         const shouldReturnStock = currentSale[0].estado === 'Completado';
+
+
+        // 1. Actualizar el estado de la venta a 'Anulado'
+        const [updateResult] = await connection.execute(
             'UPDATE venta SET estado = ? WHERE id = ?',
             ['Anulado', id]
         );
 
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Venta no encontrada' });
+        if (updateResult.affectedRows === 0) {
+             // Esto no debería pasar si la verificación inicial fue exitosa, pero es un seguro
+            await connection.rollback();
+            return res.status(404).json({ error: 'Venta no encontrada o no se pudo actualizar el estado' });
         }
-        res.json({ mensaje: 'Venta anulada correctamente' });
+
+        // 2. Si la venta estaba completada, devolver el stock
+        if (shouldReturnStock) {
+             // 2a. Obtener los productos y cantidades vendidas en esta venta
+             const [productosVendidos] = await connection.execute(
+                 'SELECT id_producto_talla, cantidad FROM venta_prod WHERE id_venta = ?',
+                 [id]
+             );
+
+             // 2b. Iterar y devolver la cantidad al stock de cada producto
+             for (const item of productosVendidos) {
+                 const { id_producto_talla, cantidad } = item;
+
+                 // Incrementar el stock (columna 'cantidad') en producto_talla
+                 const [stockUpdateResult] = await connection.execute(
+                     'UPDATE producto_talla SET cantidad = cantidad + ? WHERE id = ?', // <-- SUMAR la cantidad vendida
+                     [cantidad, id_producto_talla]
+                 );
+
+                  // Opcional: verificar stockUpdateResult.affectedRows si quieres asegurarte
+                  // de que la entrada en producto_talla todavía existe
+             }
+        }
+
+
+        // 3. Si todo salió bien (actualización de venta y, si aplica, stock), confirmar transacción
+        await connection.commit();
+        // Mensaje de éxito más descriptivo
+        const successMessage = shouldReturnStock
+            ? 'Venta anulada correctamente y stock restaurado.'
+            : 'Venta anulada correctamente (no se restauró stock porque no estaba completada).';
+        res.json({ mensaje: successMessage });
+
     } catch (error) {
-        console.error('Error al anular la venta:', error);
-        res.status(500).json({ error: 'Error al anular la venta' });
+        // Si algo falla, revertir la transacción
+        await connection.rollback();
+        console.error('Error al anular la venta y/o restaurar stock:', error);
+        // Mensaje de error genérico para el cliente
+        let clientErrorMessage = 'Error interno al anular la venta';
+         if (error.message) {
+             clientErrorMessage = `Error al anular venta: ${error.message}`;
+         }
+        res.status(500).json({ error: clientErrorMessage });
+
+    } finally {
+        // Siempre liberar la conexión
+        if (connection) connection.release();
     }
 };
+
+// ... (otras funciones como actualizarVenta, eliminarVenta, etc.) ...
 
 exports.actualizarVenta = async (req, res) => {
     try {
