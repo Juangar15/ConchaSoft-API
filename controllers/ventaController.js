@@ -5,6 +5,7 @@ exports.obtenerVentas = async (req, res) => {
         const [ventas] = await db.query('SELECT * FROM venta');
         res.json(ventas);
     } catch (error) {
+        console.error('Error al obtener las ventas:', error);
         res.status(500).json({ error: 'Error al obtener las ventas' });
     }
 };
@@ -42,18 +43,21 @@ exports.obtenerVenta = async (req, res) => {
 };
 
 exports.crearVenta = async (req, res) => {
-    // Iniciar una transacción para asegurar la integridad de los datos
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
         const { fecha, tipo_pago, id_cliente, saldo_a_favor = 0, estado, total, productos } = req.body;
 
-        if (!fecha || !tipo_pago || !id_cliente || !estado || !total || !Array.isArray(productos) || productos.isEmpty) {
+        if (!fecha || !tipo_pago || !id_cliente || !estado || !total || !Array.isArray(productos) || productos.length === 0) {
             return res.status(400).json({ error: 'Todos los campos obligatorios deben estar completos y debe incluir al menos un producto' });
         }
 
-        // Insertar la nueva venta en la tabla 'venta'
+        if (estado !== 'Activo' && estado !== 'Anulado') {
+            await connection.rollback();
+            return res.status(400).json({ error: 'El estado de la venta debe ser "Activo" o "Anulado"' });
+        }
+
         const [ventaResult] = await connection.execute(
             'INSERT INTO venta (fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total) VALUES (?, ?, ?, ?, ?, ?)',
             [fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total]
@@ -61,11 +65,9 @@ exports.crearVenta = async (req, res) => {
 
         const idVentaCreada = ventaResult.insertId;
 
-        // Iterar sobre la lista de productos y guardarlos en 'venta_prod'
         for (const producto of productos) {
             const { id_producto, id_talla, cantidad, valor } = producto;
 
-            // Obtener el ID de producto_talla
             const [productoTallaResult] = await connection.execute(
                 'SELECT id FROM producto_talla WHERE id_producto = ? AND id_talla = ?',
                 [id_producto, id_talla]
@@ -80,44 +82,86 @@ exports.crearVenta = async (req, res) => {
             const precioUnitario = valor;
             const subtotal = cantidad * precioUnitario;
 
-            // Insertar el producto en 'venta_prod'
             await connection.execute(
                 'INSERT INTO venta_prod (id_venta, id_producto_talla, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)',
                 [idVentaCreada, idProductoTalla, cantidad, precioUnitario, subtotal]
             );
         }
 
-        // Si todo salió bien, confirmar la transacción
         await connection.commit();
         res.status(201).json({ mensaje: 'Venta creada correctamente con sus productos', id_venta: idVentaCreada });
 
     } catch (error) {
-        // Si ocurre algún error, deshacer la transacción
         await connection.rollback();
         console.error('Error al crear la venta y sus productos:', error);
         res.status(500).json({ error: 'Error al crear la venta y sus productos' });
     } finally {
-        // Liberar la conexión
         connection.release();
+    }
+};
+
+exports.anularVenta = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await db.query(
+            'UPDATE venta SET estado = ? WHERE id = ?',
+            ['Anulado', id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Venta no encontrada' });
+        }
+        res.json({ mensaje: 'Venta anulada correctamente' });
+    } catch (error) {
+        console.error('Error al anular la venta:', error);
+        res.status(500).json({ error: 'Error al anular la venta' });
     }
 };
 
 exports.actualizarVenta = async (req, res) => {
     try {
         const { id } = req.params;
-        const { fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total } = req.body;
+        const { fecha, tipo_pago, id_cliente, saldo_a_favor, total } = req.body;
 
-        const [result] = await db.query(
-            'UPDATE venta SET fecha = ?, tipo_pago = ?, id_cliente = ?, saldo_a_favor = ?, estado = ?, total = ? WHERE id = ?',
-            [fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total, id]
-        );
+        const updates = [];
+        const values = [];
+
+        if (fecha !== undefined) {
+            updates.push('fecha = ?');
+            values.push(fecha);
+        }
+        if (tipo_pago !== undefined) {
+            updates.push('tipo_pago = ?');
+            values.push(tipo_pago);
+        }
+        if (id_cliente !== undefined) {
+            updates.push('id_cliente = ?');
+            values.push(id_cliente);
+        }
+        if (saldo_a_favor !== undefined) {
+            updates.push('saldo_a_favor = ?');
+            values.push(saldo_a_favor);
+        }
+        if (total !== undefined) {
+            updates.push('total = ?');
+            values.push(total);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
+        }
+
+        const sql = `UPDATE venta SET ${updates.join(', ')} WHERE id = ?`;
+        values.push(id);
+
+        const [result] = await db.query(sql, values);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Venta no encontrada' });
         }
         res.json({ mensaje: 'Venta actualizada correctamente' });
     } catch (error) {
-        console.error('Error al actualizar la venta:', error); // <--- AGREGAR ESTO
+        console.error('Error al actualizar la venta:', error);
         res.status(500).json({ error: 'Error al actualizar la venta' });
     }
 };
@@ -132,6 +176,7 @@ exports.eliminarVenta = async (req, res) => {
         }
         res.json({ mensaje: 'Venta eliminada correctamente' });
     } catch (error) {
+        console.error('Error al eliminar la venta:', error);
         res.status(500).json({ error: 'Error al eliminar la venta' });
     }
 };
