@@ -10,6 +10,17 @@ exports.obtenerVentas = async (req, res) => {
     }
 };
 
+exports.obtenerVentasCompletadas = async (req, res) => {
+    try {
+        const [ventasCompletadas] = await db.query('SELECT * FROM venta WHERE estado = ?', ['Completado']);
+        res.json(ventasCompletadas);
+    } catch (error) {
+        console.error('Error al obtener las ventas completadas:', error);
+        res.status(500).json({ error: 'Error al obtener las ventas completadas' });
+    }
+};
+
+
 exports.obtenerVenta = async (req, res) => {
     try {
         const { id } = req.params;
