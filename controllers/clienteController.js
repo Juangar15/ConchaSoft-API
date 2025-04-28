@@ -23,23 +23,28 @@ exports.obtenerCliente = async (req, res) => {
             return res.status(404).json({ error: 'Cliente no encontrado' });
         }
 
-        // Calcular el saldo a favor del cliente sumando los saldos de devoluciones y restando los saldos utilizados en ventas
+        // *** CONSULTA CORREGIDA para calcular el saldo a favor del cliente ***
         const [saldoResult] = await db.query(`
             SELECT
-                COALESCE(SUM(CASE WHEN d.saldo_a_favor > 0 THEN d.saldo_a_favor ELSE 0 END), 0) -
-                COALESCE(SUM(CASE WHEN v.saldo_a_favor > 0 THEN v.saldo_a_favor ELSE 0 END), 0) AS saldo_a_favor
-            FROM devolucion d
-            LEFT JOIN venta v ON d.id_venta = v.id
-            WHERE d.id_cliente = ?
+                COALESCE(SUM(d.saldo_a_favor), 0) - COALESCE(SUM(v.saldo_a_favor), 0) AS saldo_a_favor
+            FROM cliente c
+            LEFT JOIN devolucion d ON c.id = d.id_cliente
+            LEFT JOIN venta v ON c.id = v.id_cliente
+            WHERE c.id = ?
+            GROUP BY c.id
         `, [id]);
 
-        const clienteConSaldo = { ...cliente[0], saldo_a_favor: saldoResult[0].saldo_a_favor || 0 };
+        // Asegurarse de que saldo_a_favor sea un número, aunque el resultado de la consulta debería serlo
+        const saldoAFavorCalculado = (saldoResult.length > 0 && saldoResult[0].saldo_a_favor !== null) ? parseFloat(saldoResult[0].saldo_a_favor) : 0;
+
+        const clienteConSaldo = { ...cliente[0], saldo_a_favor: saldoAFavorCalculado };
 
         res.json(clienteConSaldo);
 
     } catch (error) {
         console.error('Error al obtener el cliente con saldo:', error);
-        res.status(500).json({ error: 'Error al obtener el cliente' });
+        // Mensaje de error más detallado en el log, genérico para el cliente
+        res.status(500).json({ error: 'Error interno al obtener el cliente con su saldo' });
     }
 };
 
