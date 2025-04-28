@@ -6,7 +6,8 @@ const { verificarToken, verificarPermiso } = require('../middleware/authMiddlewa
 router.get('/', verificarToken, verificarPermiso('ver_devoluciones'), devolucionController.obtenerDevoluciones);
 router.get('/:id', verificarToken, verificarPermiso('ver_devoluciones'), devolucionController.obtenerDevolucion);
 router.post('/', verificarToken, verificarPermiso('crear_devoluciones'), devolucionController.crearDevolucion);
-router.put('/:id', verificarToken, verificarPermiso('editar_devoluciones'), devolucionController.actualizarDevolucion);
-router.delete('/:id', verificarToken, verificarPermiso('eliminar_devoluciones'), devolucionController.eliminarDevolucion);
+router.put('/:id/anular', verificarToken, verificarPermiso('editar_devoluciones'), devolucionController.anularDevolucion);
+// router.put('/:id', verificarToken, verificarPermiso('editar_devoluciones'), devolucionController.actualizarDevolucion);
+// router.delete('/:id', verificarToken, verificarPermiso('eliminar_devoluciones'), devolucionController.eliminarDevolucion);
 
 module.exports = router;
