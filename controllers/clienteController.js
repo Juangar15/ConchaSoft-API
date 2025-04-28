@@ -12,55 +12,44 @@ exports.obtenerClientes = async (req, res) => {
 };
 
 // Obtener un cliente por ID con saldo a favor
-// Obtener un cliente por ID con saldo a favor
 exports.obtenerCliente = async (req, res) => {
-        try {
-            const { id } = req.params;
-    
-            // Obtener la información básica del cliente
-            const [cliente] = await db.query('SELECT * FROM cliente WHERE id = ?', [id]);
-    
-            if (cliente.length === 0) {
-                return res.status(404).json({ error: 'Cliente no encontrado' });
-            }
-    
-            // *** CONSULTA para calcular el saldo a favor del cliente ***
-            const [saldoResult] = await db.query(`
-                SELECT
-                    COALESCE(SUM(d.saldo_a_favor), 0) - COALESCE(SUM(v.saldo_a_favor), 0) AS saldo_a_favor
-                FROM cliente c
-                LEFT JOIN devolucion d ON c.id = d.id_cliente
-                LEFT JOIN venta v ON c.id = v.id_cliente
-                WHERE c.id = ?
-                GROUP BY c.id
-            `, [id]);
-    
-            // --- AÑADE ESTOS LOGS EN TU BACKEND ---
-            console.log('Backend obtenerCliente: Resultado crudo de la consulta de saldo:', saldoResult);
-            // --- FIN LOGS ---
-    
-            // Asegurarse de que saldo_a_favor sea un número, aunque el resultado de la consulta debería serlo
-            // Ajuste: Asegúrate de que 'saldo_a_favor' se accede correctamente,
-            // aunque el resultado debería ser un array con un objeto { saldo_a_favor: ... }
-            const saldoAFavorCalculado = (saldoResult && saldoResult.length > 0 && saldoResult[0].saldo_a_favor !== undefined && saldoResult[0].saldo_a_favor !== null)
-                                        ? parseFloat(saldoResult[0].saldo_a_favor)
-                                        : 0;
-    
-    
-            // --- AÑADE ESTE OTRO LOG EN TU BACKEND ---
-            console.log('Backend obtenerCliente: Saldo calculado para responder:', saldoAFavorCalculado);
-            // --- FIN LOG ---
-    
-    
-            const clienteConSaldo = { ...cliente[0], saldo_a_favor: saldoAFavorCalculado };
-    
-            res.json(clienteConSaldo);
-    
-        } catch (error) {
-            console.error('Error al obtener el cliente con saldo:', error);
-            res.status(500).json({ error: 'Error interno al obtener el cliente con su saldo' });
-        }
-    };
+    try {
+        const { id } = req.params;
+
+        // Obtener la información básica del cliente
+        const [cliente] = await db.query('SELECT * FROM cliente WHERE id = ?', [id]);
+
+        if (cliente.length === 0) {
+            return res.status(404).json({ error: 'Cliente no encontrado' });
+        }
+
+        // *** CONSULTA CORREGIDA para calcular el saldo a favor del cliente ***
+        const [saldoResult] = await db.query(`
+            SELECT
+                COALESCE(SUM(d.saldo_a_favor), 0) - COALESCE(SUM(v.saldo_a_favor), 0) AS saldo_a_favor
+            FROM cliente c
+            LEFT JOIN devolucion d ON c.id = d.id_cliente
+            LEFT JOIN venta v ON c.id = v.id_cliente
+            WHERE c.id = ?
+            GROUP BY c.id
+        `, [id]);
+
+        console.log('Backend obtenerCliente: Resultado crudo de la consulta de saldo:', saldoResult);
+        // Asegurarse de que saldo_a_favor sea un número, aunque el resultado de la consulta debería serlo
+        const saldoAFavorCalculado = (saldoResult.length > 0 && saldoResult[0].saldo_a_favor !== null) ? parseFloat(saldoResult[0].saldo_a_favor) : 0;
+
+        console.log('Backend obtenerCliente: Saldo calculado para responder:', saldoAFavorCalculado);
+
+        const clienteConSaldo = { ...cliente[0], saldo_a_favor: saldoAFavorCalculado };
+
+        res.json(clienteConSaldo);
+
+    } catch (error) {
+        console.error('Error al obtener el cliente con saldo:', error);
+        // Mensaje de error más detallado en el log, genérico para el cliente
+        res.status(500).json({ error: 'Error interno al obtener el cliente con su saldo' });
+    }
+};
 
 // Crear un cliente
 exports.crearCliente = async (req, res) => {
