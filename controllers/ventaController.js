@@ -58,11 +58,13 @@ exports.crearVenta = async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // *** CAMBIO AQUÍ: Recibir saldo_a_favor_aplicado y monto_pagado desde Flutter ***
-        const { fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado = 0, estado, total, monto_pagado, productos } = req.body;
+        // *** CAMBIO AQUÍ: Seguir recibiendo saldo_a_favor_aplicado (que se insertará en la columna saldo_a_favor) ***
+        // *** PERO NO ESPERAR monto_pagado si no lo vas a usar/almacenar en la DB por ahora ***
+        const { fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado = 0, estado, total, productos } = req.body;
+        // Nota: Aunque Flutter envía 'monto_pagado', el backend aquí lo ignora si no lo usas.
 
         // Validaciones iniciales (mantener las existentes)
-        if (!fecha || !tipo_pago || !id_cliente || estado === undefined || !total || !Array.isArray(productos) || productos.length === 0 || monto_pagado === undefined) {
+        if (!fecha || !tipo_pago || !id_cliente || estado === undefined || !total || !Array.isArray(productos) || productos.length === 0) {
             await connection.rollback();
             return res.status(400).json({ error: 'Faltan campos obligatorios o la lista de productos está vacía' });
         }
@@ -72,8 +74,8 @@ exports.crearVenta = async (req, res) => {
              return res.status(400).json({ error: 'El estado de la venta debe ser "Completado" o "Anulado"' });
         }
 
-        // *** NUEVA VALIDACIÓN: Verificar que el saldo a favor aplicado no excede el saldo actual del cliente ***
-        // Primero, obtener el saldo actual del cliente (misma lógica que obtenerCliente)
+        // Validar que el saldo a favor aplicado no excede el saldo actual del cliente
+        // Primero, obtener el saldo actual del cliente
         const [saldoResult] = await connection.execute(`
             SELECT
                 COALESCE(SUM(CASE WHEN d.saldo_a_favor > 0 THEN d.saldo_a_favor ELSE 0 END), 0) -
@@ -82,41 +84,36 @@ exports.crearVenta = async (req, res) => {
             LEFT JOIN devolucion d ON c.id = d.id_cliente
             LEFT JOIN venta v ON c.id = v.id_cliente
             WHERE c.id = ?
-            GROUP BY c.id // Asegurarse de agrupar si un cliente tiene múltiples devoluciones/ventas
+            GROUP BY c.id
         `, [id_cliente]);
 
          const saldoActualCliente = saldoResult.length > 0 ? (saldoResult[0].saldo_a_favor_actual || 0) : 0;
 
-
-         // Validar que el saldo aplicado desde el frontend no sea mayor al saldo real disponible
-         // También validar que no sea mayor que el total de la venta (aunque Flutter ya valida esto, es buena práctica aquí)
+         // Validar que el saldo aplicado no sea mayor al saldo real disponible
          if (saldo_a_favor_aplicado > saldoActualCliente + 0.001) { // Añadir un pequeño margen por errores de punto flotante
               await connection.rollback();
-              // Considerar no revelar el saldo exacto por seguridad, solo decir que es insuficiente
               return res.status(400).json({ error: 'Saldo a favor insuficiente para aplicar este monto.' });
          }
           // Opcional: Validar que saldo_a_favor_aplicado no sea mayor que el total de la venta
-         if (saldo_a_favor_aplicado > total + 0.001) { // Tampoco puede exceder el total de los productos
+         if (saldo_a_favor_aplicado > total + 0.001) {
                await connection.rollback();
                return res.status(400).json({ error: 'El monto de saldo a favor aplicado excede el total de la venta.' });
          }
 
 
         // Insertar la venta principal
-        // *** CAMBIO AQUÍ: Usar saldo_a_favor_aplicado para la columna saldo_a_favor (o el nombre que uses para el saldo usado en esta venta) ***
-        // También considera almacenar el monto pagado final si es relevante
+        // *** CAMBIO AQUÍ: NO incluir 'monto_pagado' en la query de INSERT ***
         const [ventaResult] = await connection.execute(
-            'INSERT INTO venta (fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total, monto_pagado) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado, estado, total, monto_pagado] // Usar saldo_a_favor_aplicado aquí
+            'INSERT INTO venta (fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total) VALUES (?, ?, ?, ?, ?, ?)',
+            [fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado, estado, total] // Usar saldo_a_favor_aplicado para la columna saldo_a_favor
         );
 
         const idVentaCreada = ventaResult.insertId;
 
-        // Iterar sobre los productos de la venta para insertarlos en venta_prod y actualizar stock
+        // Iterar sobre los productos... (esta parte se mantiene igual)
         for (const producto of productos) {
             const { id_producto, id_talla, cantidad, valor } = producto;
 
-            // Paso 1: Encontrar el id de la tabla pivote producto_talla y obtener su cantidad (stock real)
             const [productoTallaResult] = await connection.execute(
                 'SELECT id, cantidad FROM producto_talla WHERE id_producto = ? AND id_talla = ?',
                 [id_producto, id_talla]
@@ -130,7 +127,6 @@ exports.crearVenta = async (req, res) => {
             const idProductoTalla = productoTallaResult[0].id;
             const stockCantidadActual = productoTallaResult[0].cantidad;
 
-            // Validar stock en el backend (solo si la venta está completada)
             if (estado === 'Completado' && stockCantidadActual < cantidad) {
                  await connection.rollback();
                  return res.status(400).json({ error: `Stock insuficiente para el producto (${id_producto}) y talla (${id_talla}). Stock disponible: ${stockCantidadActual}` });
@@ -139,14 +135,11 @@ exports.crearVenta = async (req, res) => {
             const precioUnitario = valor;
             const subtotal = cantidad * precioUnitario;
 
-            // Paso 2: Insertar el detalle del producto en venta_prod
             await connection.execute(
                 'INSERT INTO venta_prod (id_venta, id_producto_talla, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)',
                 [idVentaCreada, idProductoTalla, cantidad, precioUnitario, subtotal]
             );
 
-            // Paso 3: ACTUALIZAR EL STOCK (cantidad) en producto_talla
-            // Solo decrementa el stock si la venta está marcada como 'Completado'
             if (estado === 'Completado') {
                 await connection.execute(
                     'UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?',
@@ -155,7 +148,6 @@ exports.crearVenta = async (req, res) => {
             }
         }
 
-        // Si todo salió bien, confirma la transacción
         await connection.commit();
         res.status(201).json({ mensaje: 'Venta creada correctamente con sus productos', id_venta: idVentaCreada });
 
