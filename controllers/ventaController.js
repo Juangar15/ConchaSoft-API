@@ -54,118 +54,128 @@ exports.obtenerVenta = async (req, res) => {
 };
 
 exports.crearVenta = async (req, res) => {
-    const connection = await db.getConnection();
-    try {
-        await connection.beginTransaction();
-
-        // *** CAMBIO AQUÍ: Seguir recibiendo saldo_a_favor_aplicado (que se insertará en la columna saldo_a_favor) ***
-        // *** PERO NO ESPERAR monto_pagado si no lo vas a usar/almacenar en la DB por ahora ***
-        const { fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado = 0, estado, total, productos } = req.body;
-        // Nota: Aunque Flutter envía 'monto_pagado', el backend aquí lo ignora si no lo usas.
-
-        // Validaciones iniciales (mantener las existentes)
-        if (!fecha || !tipo_pago || !id_cliente || estado === undefined || !total || !Array.isArray(productos) || productos.length === 0) {
-            await connection.rollback();
-            return res.status(400).json({ error: 'Faltan campos obligatorios o la lista de productos está vacía' });
-        }
-
-        if (estado !== 'Completado' && estado !== 'Anulado') {
-             await connection.rollback();
-             return res.status(400).json({ error: 'El estado de la venta debe ser "Completado" o "Anulado"' });
-        }
-
-        // Validar que el saldo a favor aplicado no excede el saldo actual del cliente
-        // Primero, obtener el saldo actual del cliente
-        const [saldoResult] = await connection.execute(`
-            SELECT
-                COALESCE(SUM(CASE WHEN d.saldo_a_favor > 0 THEN d.saldo_a_favor ELSE 0 END), 0) -
-                COALESCE(SUM(CASE WHEN v.saldo_a_favor > 0 THEN v.saldo_a_favor ELSE 0 END), 0) AS saldo_a_favor_actual
-            FROM cliente c
-            LEFT JOIN devolucion d ON c.id = d.id_cliente
-            LEFT JOIN venta v ON c.id = v.id_cliente
-            WHERE c.id = ?
-            GROUP BY c.id
-        `, [id_cliente]);
-
-         const saldoActualCliente = saldoResult.length > 0 ? (saldoResult[0].saldo_a_favor_actual || 0) : 0;
-
-         // Validar que el saldo aplicado no sea mayor al saldo real disponible
-         if (saldo_a_favor_aplicado > saldoActualCliente + 0.001) { // Añadir un pequeño margen por errores de punto flotante
-              await connection.rollback();
-              return res.status(400).json({ error: 'Saldo a favor insuficiente para aplicar este monto.' });
-         }
-          // Opcional: Validar que saldo_a_favor_aplicado no sea mayor que el total de la venta
-         if (saldo_a_favor_aplicado > total + 0.001) {
-               await connection.rollback();
-               return res.status(400).json({ error: 'El monto de saldo a favor aplicado excede el total de la venta.' });
-         }
-
-
-        // Insertar la venta principal
-        // *** CAMBIO AQUÍ: NO incluir 'monto_pagado' en la query de INSERT ***
-        const [ventaResult] = await connection.execute(
-            'INSERT INTO venta (fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total) VALUES (?, ?, ?, ?, ?, ?)',
-            [fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado, estado, total] // Usar saldo_a_favor_aplicado para la columna saldo_a_favor
-        );
-
-        const idVentaCreada = ventaResult.insertId;
-
-        // Iterar sobre los productos... (esta parte se mantiene igual)
-        for (const producto of productos) {
-            const { id_producto, id_talla, cantidad, valor } = producto;
-
-            const [productoTallaResult] = await connection.execute(
-                'SELECT id, cantidad FROM producto_talla WHERE id_producto = ? AND id_talla = ?',
-                [id_producto, id_talla]
-            );
-
-            if (productoTallaResult.length === 0) {
-                await connection.rollback();
-                return res.status(400).json({ error: `No se encontró la combinación de producto (${id_producto}) y talla (${id_talla})` });
-            }
-
-            const idProductoTalla = productoTallaResult[0].id;
-            const stockCantidadActual = productoTallaResult[0].cantidad;
-
-            if (estado === 'Completado' && stockCantidadActual < cantidad) {
-                 await connection.rollback();
-                 return res.status(400).json({ error: `Stock insuficiente para el producto (${id_producto}) y talla (${id_talla}). Stock disponible: ${stockCantidadActual}` });
-            }
-
-            const precioUnitario = valor;
-            const subtotal = cantidad * precioUnitario;
-
-            await connection.execute(
-                'INSERT INTO venta_prod (id_venta, id_producto_talla, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)',
-                [idVentaCreada, idProductoTalla, cantidad, precioUnitario, subtotal]
-            );
-
-            if (estado === 'Completado') {
-                await connection.execute(
-                    'UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?',
-                    [cantidad, idProductoTalla]
-                );
-            }
-        }
-
-        await connection.commit();
-        res.status(201).json({ mensaje: 'Venta creada correctamente con sus productos', id_venta: idVentaCreada });
-
-    } catch (error) {
-        await connection.rollback();
-        console.error('Error al crear la venta y sus productos:', error);
-        let clientErrorMessage = 'Error interno al crear la venta y sus productos';
-        if (error.code === 'ER_BAD_FIELD_ERROR' || error.code === 'ER_NO_REFERENCED_ROW_2') {
-            clientErrorMessage = `Error de base de datos: ${error.sqlMessage || error.message}`;
-        } else if (error.message) {
-            clientErrorMessage = `Error al crear venta: ${error.message}`;
-        }
-
-        res.status(500).json({ error: clientErrorMessage });
-    } finally {
-        if (connection) connection.release();
-    }
-};
+        const connection = await db.getConnection();
+        try {
+            await connection.beginTransaction();
+    
+            const { fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado = 0, estado, total, productos } = req.body;
+    
+            // Validaciones iniciales (mantener las existentes)
+            if (!fecha || !tipo_pago || !id_cliente || estado === undefined || !total || !Array.isArray(productos) || productos.length === 0) {
+                await connection.rollback();
+                return res.status(400).json({ error: 'Faltan campos obligatorios o la lista de productos está vacía' });
+            }
+    
+            if (estado !== 'Completado' && estado !== 'Anulado') {
+                await connection.rollback();
+                return res.status(400).json({ error: 'El estado de la venta debe ser "Completado" o "Anulado"' });
+            }
+    
+            // *** Obtener el saldo actual del cliente para la validación ***
+            // Ahora lo leemos directamente de la nueva columna 'saldo_a_favor' en la tabla 'cliente'
+            const [clienteSaldoActualRow] = await connection.execute(
+                'SELECT saldo_a_favor FROM cliente WHERE id = ?',
+                [id_cliente]
+            );
+    
+            if (clienteSaldoActualRow.length === 0) {
+                await connection.rollback();
+                return res.status(404).json({ error: 'Cliente no encontrado para validar saldo.' });
+            }
+    
+            const saldoActualCliente = parseFloat(clienteSaldoActualRow[0].saldo_a_favor);
+            console.log(`Backend crearVenta: Saldo actual del cliente ${id_cliente} para validación: ${saldoActualCliente}`); // Log de validación
+    
+    
+            // Validar que el saldo aplicado no sea mayor al saldo real disponible
+            if (saldo_a_favor_aplicado > saldoActualCliente + 0.001) { // Añadir un pequeño margen por errores de punto flotante
+                await connection.rollback();
+                return res.status(400).json({ error: 'Saldo a favor insuficiente para aplicar este monto.' });
+            }
+            // Opcional: Validar que saldo_a_favor_aplicado no sea mayor que el total de la venta
+            if (saldo_a_favor_aplicado > total + 0.001) {
+                await connection.rollback();
+                return res.status(400).json({ error: 'El monto de saldo a favor aplicado excede el total de la venta.' });
+            }
+    
+    
+            // Insertar la venta principal
+            const [ventaResult] = await connection.execute(
+                'INSERT INTO venta (fecha, tipo_pago, id_cliente, saldo_a_favor, estado, total) VALUES (?, ?, ?, ?, ?, ?)',
+                [fecha, tipo_pago, id_cliente, saldo_a_favor_aplicado, estado, total] // saldo_a_favor en tabla venta guarda el monto aplicado en ESTA venta
+            );
+    
+            const idVentaCreada = ventaResult.insertId;
+            console.log(`Backend crearVenta: Venta ${idVentaCreada} insertada.`); // Log de inserción venta
+    
+    
+            // Iterar sobre los productos, insertar en venta_prod, actualizar stock...
+            for (const producto of productos) {
+                const { id_producto, id_talla, cantidad, valor } = producto;
+    
+                const [productoTallaResult] = await connection.execute(
+                    'SELECT id, cantidad FROM producto_talla WHERE id_producto = ? AND id_talla = ?',
+                    [id_producto, id_talla]
+                );
+    
+                if (productoTallaResult.length === 0) {
+                    await connection.rollback();
+                    return res.status(400).json({ error: `No se encontró la combinación de producto (${id_producto}) y talla (${id_talla})` });
+                }
+    
+                const idProductoTalla = productoTallaResult[0].id;
+                const stockCantidadActual = productoTallaResult[0].cantidad;
+    
+                if (estado === 'Completado' && stockCantidadActual < cantidad) {
+                    await connection.rollback();
+                    return res.status(400).json({ error: `Stock insuficiente para el producto (${id_producto}) y talla (${id_talla}). Stock disponible: ${stockCantidadActual}` });
+                }
+    
+                const precioUnitario = valor;
+                const subtotal = cantidad * precioUnitario;
+    
+                await connection.execute(
+                    'INSERT INTO venta_prod (id_venta, id_producto_talla, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)',
+                    [idVentaCreada, idProductoTalla, cantidad, precioUnitario, subtotal]
+                );
+                console.log(`Backend crearVenta: Insertado producto ${id_producto} (talla ${id_talla}) en venta ${idVentaCreada}.`); // Log inserción producto
+    
+    
+                if (estado === 'Completado') {
+                    await connection.execute(
+                        'UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?',
+                        [cantidad, idProductoTalla]
+                    );
+                    console.log(`Backend crearVenta: Stock de producto_talla ${idProductoTalla} actualizado, restando ${cantidad}.`); // Log stock
+                }
+            }
+    
+            // --- NUEVO: Restar el saldo aplicado del campo 'saldo_a_favor' del cliente ---
+            if (saldo_a_favor_aplicado > 0) {
+                await connection.execute(
+                    'UPDATE cliente SET saldo_a_favor = saldo_a_favor - ? WHERE id = ?',
+                    [saldo_a_favor_aplicado, id_cliente]
+                );
+                console.log(`Backend crearVenta: Saldo total del cliente ${id_cliente} actualizado, restando ${saldo_a_favor_aplicado}`); // Log actualización saldo cliente
+            }
+            // --- FIN NUEVO ---
+    
+    
+            await connection.commit(); // Confirmar transacción
+    
+            res.status(201).json({ mensaje: 'Venta creada correctamente con sus productos', id_venta: idVentaCreada });
+    
+        } catch (error) {
+            await connection.rollback(); // Revertir transacción si algo falla
+            console.error('Error al crear la venta y sus productos:', error);
+            let clientErrorMessage = 'Error interno al crear la venta y sus productos';
+            // Puedes refinar los mensajes de error aquí si lo deseas
+            res.status(500).json({ error: clientErrorMessage });
+    
+        } finally {
+            if (connection) connection.release();
+        }
+    };
 
 // Las otras funciones del controlador de ventas permanecen igual.
 
