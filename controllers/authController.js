@@ -109,7 +109,7 @@ exports.requestPasswordReset = async (req, res) => {
     }
 
     // 2. Generar un token único y definir su expiración (1 hora)
-    const resetToken = crypto.randomBytes(32).toString('hex'); // Genera un token aleatorio de 64 caracteres
+    const resetToken = Math.floor(100000 + Math.random() * 900000).toString();// Genera un token aleatorio de 64 caracteres
     const expiresAt = new Date(Date.now() + 3600000); // 1 hora en milisegundos
 
     // 3. Eliminar cualquier token antiguo para este usuario y guardar el nuevo
