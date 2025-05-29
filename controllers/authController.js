@@ -92,152 +92,118 @@ exports.iniciarSesion = async (req, res) => {
 exports.requestPasswordReset = async (req, res) => {
   const { email } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ error: 'El correo electrónico es requerido.' });
-  }
-
   try {
-    // 1. Buscar el usuario por email en la tabla 'usuario'
-    const [rows] = await db.query('SELECT login, correo FROM usuario WHERE correo = ?', [email]);
-    const user = rows[0];
-
-    // Importante: No revelar si el email existe o no por razones de seguridad.
-    // Siempre se envía la misma respuesta genérica.
-    if (!user) {
-      console.warn(`Intento de recuperación de contraseña para email no registrado: ${email}`);
-      return res.status(200).json({ message: 'Si la dirección de correo electrónico está registrada, se ha enviado un código de recuperación.' });
+    const [rows] = await db.execute('SELECT login FROM usuario WHERE login = ?', [email]);
+    if (rows.length === 0) {
+      // Por seguridad, siempre responde con un mensaje genérico para no revelar si un email existe o no
+      return res.status(200).json({ message: 'Si la dirección de correo electrónico está registrada, recibirás un enlace para restablecer tu contraseña.' });
     }
 
-    // 2. Generar un token único y definir su expiración (1 hora)
-    const resetToken = Math.floor(100000 + Math.random() * 900000).toString();// Genera un token aleatorio de 64 caracteres
-    const expiresAt = new Date(Date.now() + 3600000); // 1 hora en milisegundos
+    const user = rows[0];
 
-    // 3. Eliminar cualquier token antiguo para este usuario y guardar el nuevo
-    await db.query('DELETE FROM password_reset_tokens WHERE user_login = ?', [user.login]);
-    await db.query(
-      'INSERT INTO password_reset_tokens (user_login, token, expires_at) VALUES (?, ?, ?)',
+    // --- Generar un código numérico de 6 dígitos ---
+    const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
+    // ------------------------------------------------
+
+    // Calcular la fecha de expiración (ej. 15 minutos en el futuro)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
+
+    // Eliminar tokens anteriores para este usuario (buena práctica)
+    await db.execute('DELETE FROM password_reset_tokens WHERE user_id = ?', [user.login]);
+
+    // Guardar el token (código numérico) y su expiración en la base de datos
+    await db.execute(
+      'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?, ?, ?)',
       [user.login, resetToken, expiresAt]
     );
 
-    // 4. Enviar el correo electrónico con el token
-    const mailOptions = {
-      from: process.env.EMAIL_FROM, // Dirección de correo configurada en .env
-      to: email,
-      subject: 'Restablecimiento de Contraseña para tu Cuenta',
+    // --- Construir la URL de restablecimiento con email y código como parámetros ---
+    // Asegúrate de que process.env.FRONTEND_URL apunte a la URL base de tu frontend (ej. 'https://tu-frontend.onrender.com')
+    const resetUrl = `${process.env.FRONTEND_URL}/cambiar-clave?email=${encodeURIComponent(user.login)}&code=${resetToken}`;
+    // -------------------------------------------------------------------------------
+
+    // Enviar el correo electrónico con el código numérico y el enlace directo
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM, // Debe ser un email verificado en tu servicio SMTP (SendGrid/Mailgun)
+      to: user.login,
+      subject: 'Restablecimiento de Contraseña - Código de Verificación',
       html: `
-        <p>Hola,</p>
-        <p>Hemos recibido una solicitud para restablecer la contraseña de tu cuenta asociada a este correo electrónico.</p>
-        <p>Tu código de recuperación es: <strong>${resetToken}</strong></p>
-        <p>Este código es válido por 1 hora.</p>
-        <p>Si no solicitaste esto, por favor ignora este correo. Tu contraseña no ha sido modificada.</p>
-        <p>También puedes usar el siguiente enlace para ir directamente a restablecer tu contraseña:</p>
-        <p><a href="${process.env.FRONTEND_URL}/resetear-contrasena?email=${encodeURIComponent(email)}&token=${resetToken}">Restablecer Contraseña</a></p>
-        <p>Gracias,</p>
-        <p>El equipo de tu aplicación</p>
+        <h1>Restablecimiento de Contraseña</h1>
+        <p>Has solicitado restablecer tu contraseña. Tu código de verificación es:</p>
+        <h2 style="color: #4CAF50; font-size: 24px; font-weight: bold;">${resetToken}</h2>
+        <p>Este código es válido por 15 minutos.</p>
+        <p>Puedes ir directamente a restablecer tu contraseña haciendo clic en el siguiente enlace:</p>
+        <p><a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Restablecer mi Contraseña</a></p>
+        <p>Si el enlace no funciona, o si prefieres, copia y pega el código <strong>${resetToken}</strong> en la página de verificación de tu aplicación.</p>
+        <p>Si no solicitaste esto, por favor, ignora este correo.</p>
       `,
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    res.status(200).json({ message: 'Si la dirección de correo electrónico está registrada, recibirás un código para restablecer tu contraseña.' });
 
-    res.status(200).json({ message: 'Si la dirección de correo electrónico está registrada, se ha enviado un código de recuperación.' });
-
-  } catch (error) {
-    console.error('Error al solicitar restablecimiento de contraseña:', error);
-    res.status(500).json({ error: 'Error interno del servidor al procesar la solicitud.' });
+  } catch (err) {
+    console.error('Error al solicitar restablecimiento de contraseña:', err);
+    res.status(500).json({ error: 'Error interno del servidor. Por favor, inténtalo de nuevo más tarde.' });
   }
 };
 
-/**
- * Verifica un código de restablecimiento de contraseña.
- * Requiere 'email' y 'code' en el cuerpo de la solicitud.
- */
+
 exports.verifyResetCode = async (req, res) => {
   const { email, code } = req.body;
 
   if (!email || !code) {
-    return res.status(400).json({ error: 'El correo electrónico y el código son requeridos.' });
+    return res.status(400).json({ error: 'Correo electrónico y código son requeridos.' });
   }
 
   try {
-    // 1. Buscar el token asociado al usuario y al código
-    const [rows] = await db.query(
-      `SELECT prt.token, prt.expires_at, u.login AS user_login
-       FROM password_reset_tokens prt
-       JOIN usuario u ON prt.user_login = u.login
-       WHERE u.correo = ? AND prt.token = ?`,
+    const [rows] = await db.execute(
+      'SELECT * FROM password_reset_tokens WHERE user_id = ? AND token = ? AND expires_at > NOW()',
       [email, code]
     );
-    const tokenRecord = rows[0];
 
-    if (!tokenRecord) {
-      return res.status(400).json({ error: 'El código es inválido o no existe.' });
+    if (rows.length === 0) {
+      return res.status(400).json({ error: 'Código de restablecimiento inválido o expirado.' });
     }
 
-    // 2. Verificar si el token ha expirado
-    if (new Date() > new Date(tokenRecord.expires_at)) {
-      // Si el token ha expirado, lo eliminamos para limpiar la base de datos
-      await db.query('DELETE FROM password_reset_tokens WHERE token = ?', [code]);
-      return res.status(400).json({ error: 'El código ha expirado. Por favor, solicita uno nuevo.' });
-    }
-
-    // Si el código es válido y no ha expirado, se permite proceder
-    res.status(200).json({ message: 'Código verificado exitosamente. Procede a restablecer tu contraseña.', userLogin: tokenRecord.user_login });
-
-  } catch (error) {
-    console.error('Error al verificar el código de restablecimiento:', error);
-    res.status(500).json({ error: 'Error interno del servidor al verificar el código.' });
+    res.status(200).json({ message: 'Código verificado exitosamente.' });
+  } catch (err) {
+    console.error('Error al verificar código de restablecimiento:', err);
+    res.status(500).json({ error: 'Error interno del servidor.' });
   }
 };
 
-/**
- * Restablece la contraseña de un usuario usando un código válido.
- * Requiere 'email', 'code' y 'newPassword' en el cuerpo de la solicitud.
- */
+
 exports.resetPassword = async (req, res) => {
   const { email, code, newPassword } = req.body;
 
   if (!email || !code || !newPassword) {
-    return res.status(400).json({ error: 'Correo, código y nueva contraseña son requeridos.' });
+    return res.status(400).json({ error: 'Correo electrónico, código y nueva contraseña son requeridos.' });
   }
-
-  // Opcional: Validaciones de complejidad de la nueva contraseña
-  if (newPassword.length < 8) { // Ejemplo: mínimo 8 caracteres
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
-  }
-  // Puedes añadir más reglas de validación (ej. regex para mayúsculas, números, símbolos)
 
   try {
-    // 1. Verificar el código nuevamente (esto es crucial por seguridad)
-    const [tokenRows] = await db.query(
-      `SELECT prt.token, prt.expires_at, u.login AS user_login
-       FROM password_reset_tokens prt
-       JOIN usuario u ON prt.user_login = u.login
-       WHERE u.correo = ? AND prt.token = ?`,
+    // 1. Verificar el código y la expiración
+    const [tokenRows] = await db.execute(
+      'SELECT * FROM password_reset_tokens WHERE user_id = ? AND token = ? AND expires_at > NOW()',
       [email, code]
     );
-    const tokenRecord = tokenRows[0];
 
-    // Si el token no existe, no coincide o ha expirado, se devuelve un error
-    if (!tokenRecord || new Date() > new Date(tokenRecord.expires_at)) {
-      if (tokenRecord && new Date() > new Date(tokenRecord.expires_at)) {
-         await db.query('DELETE FROM password_reset_tokens WHERE token = ?', [code]); // Limpia el token expirado
-      }
-      return res.status(400).json({ error: 'El código es inválido o ha expirado. Por favor, solicita uno nuevo.' });
+    if (tokenRows.length === 0) {
+      return res.status(400).json({ error: 'Código de restablecimiento inválido o expirado. Por favor, reinicia el proceso.' });
     }
 
-    // 2. Hashear la nueva contraseña antes de guardarla
-    const hashedPassword = await bcrypt.hash(newPassword, 10); // Costo del salt: 10
+    // 2. Hashear la nueva contraseña
+    const hashedPassword = await bcrypt.hash(newPassword, 10); // Asegúrate de usar el mismo factor de salado que en el registro
 
-    // 3. Actualizar la contraseña del usuario en la tabla 'usuario'
-    await db.query('UPDATE usuario SET contraseña = ? WHERE login = ?', [hashedPassword, tokenRecord.user_login]);
+    // 3. Actualizar la contraseña del usuario
+    await db.execute('UPDATE usuario SET password = ? WHERE login = ?', [hashedPassword, email]);
 
-    // 4. Invalidar/Eliminar el token de restablecimiento para que no pueda ser reutilizado
-    await db.query('DELETE FROM password_reset_tokens WHERE token = ?', [code]);
+    // 4. Eliminar el token de restablecimiento (ya usado)
+    await db.execute('DELETE FROM password_reset_tokens WHERE user_id = ?', [email]);
 
-    res.status(200).json({ message: 'Contraseña restablecida exitosamente. Ahora puedes iniciar sesión con tu nueva contraseña.' });
+    res.status(200).json({ message: 'Contraseña restablecida exitosamente.' });
 
-  } catch (error) {
-    console.error('Error al restablecer la contraseña:', error);
-    res.status(500).json({ error: 'Error interno del servidor al restablecer la contraseña.' });
+  } catch (err) {
+    console.error('Error al restablecer contraseña:', err);
+    res.status(500).json({ error: 'Error interno del servidor.' });
   }
 };
