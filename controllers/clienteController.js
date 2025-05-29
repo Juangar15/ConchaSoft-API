@@ -1,48 +1,101 @@
-const db = require('../db');
+const db = require('../db'); // Asegúrate de que esta conexión a la base de datos sea la correcta.
 
-// Obtener todos los clientes
+// Obtener todos los clientes con búsqueda y paginación
 exports.obtenerClientes = async (req, res) => {
     try {
-        const [clientes] = await db.query('SELECT * FROM cliente');
-        res.json(clientes);
+        // 1. Obtener parámetros de consulta
+        const { page = 1, limit = 10, search } = req.query; // Valores predeterminados
+        const pageNumber = parseInt(page, 10);
+        const limitNumber = parseInt(limit, 10);
+
+        // Calcular el OFFSET (el número de filas a saltar)
+        const offset = (pageNumber - 1) * limitNumber;
+
+        // 2. Construir la consulta SQL para el filtro de búsqueda
+        let whereClause = '';
+        let queryParams = [];
+
+        if (search) {
+            const searchTerm = `%${search}%`; // Para búsquedas con LIKE
+            whereClause = `
+                WHERE
+                    nombre LIKE ? OR
+                    apellido LIKE ? OR
+                    correo LIKE ? OR
+                    direccion LIKE ? OR
+                    municipio LIKE ? OR
+                    barrio LIKE ? OR
+                    telefono LIKE ?
+            `;
+            queryParams = [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm];
+
+            // Manejar la búsqueda por estado (si 'search' es 'activo' o 'inactivo')
+            // Asumiendo que 'estado' es un TINYINT(1) o BOOLEAN en MySQL
+            if (search.toLowerCase() === 'activo') {
+                whereClause += (whereClause ? ' OR ' : ' WHERE ') + 'estado = 1'; // 1 para true en MySQL
+            } else if (search.toLowerCase() === 'inactivo') {
+                whereClause += (whereClause ? ' OR ' : ' WHERE ') + 'estado = 0'; // 0 para false en MySQL
+            }
+        }
+
+        // 3. Obtener el total de elementos que coinciden con el filtro (sin paginación)
+        const [totalRows] = await db.query(`SELECT COUNT(*) AS totalItems FROM cliente ${whereClause}`, queryParams);
+        const totalItems = totalRows[0].totalItems;
+
+        // 4. Obtener los clientes para la página actual con paginación
+        const sqlQuery = `
+            SELECT
+                id, nombre, apellido, correo, direccion, municipio, barrio, telefono, estado
+            FROM
+                cliente
+            ${whereClause}
+            ORDER BY
+                nombre ASC, apellido ASC
+            LIMIT ? OFFSET ?;
+        `;
+        // Los queryParams para la paginación se añaden al final
+        const [clientes] = await db.query(sqlQuery, [...queryParams, limitNumber, offset]);
+
+        // 5. Devolver los datos y el total
+        res.json({
+            clientes: clientes,
+            totalItems: totalItems,
+            currentPage: pageNumber,
+            itemsPerPage: limitNumber,
+            totalPages: Math.ceil(totalItems / limitNumber),
+        });
+
     } catch (error) {
         console.error('Error al obtener los clientes:', error);
         res.status(500).json({ error: 'Error al obtener los clientes' });
     }
 };
 
-// Obtener un cliente por ID con saldo a favor
-// Obtener un cliente por ID, ahora leyendo el saldo directamente del campo en la tabla cliente
+// Obtener un cliente por ID (sin referencia a saldo_a_favor)
 exports.obtenerCliente = async (req, res) => {
-        try {
-            const { id } = req.params;
-    
-            // *** CONSULTA SIMPLIFICADA: Leer el saldo directamente del campo en la tabla cliente ***
-            // Asegúrate de seleccionar todas las columnas que la app Flutter espera recibir, además de saldo_a_favor
-            const [cliente] = await db.query(
-                'SELECT id, nombre, apellido, correo, direccion, municipio, barrio, telefono, estado FROM cliente WHERE id = ?',
-                [id]
-            );
-    
-            if (cliente.length === 0) {
-                return res.status(404).json({ error: 'Cliente no encontrado' });
-            }
-    
-            // El resultado ya viene con el campo saldo_a_favor incluido
-            const clienteConSaldo = cliente[0];
-    
-            // Opcional: Log para confirmar que leemos el saldo directamente
-            console.log('Backend obtenerCliente: Saldo leído directamente del cliente:', clienteConSaldo.saldo_a_favor);
-    
-            res.json(clienteConSaldo);
-    
-        } catch (error) {
-            console.error('Error al obtener el cliente:', error); // Error si falla la lectura directa
-            res.status(500).json({ error: 'Error interno al obtener el cliente' });
-        }
-    };
+    try {
+        const { id } = req.params;
 
-// Crear un cliente
+        // Consulta sin saldo_a_favor
+        const [cliente] = await db.query(
+            'SELECT id, nombre, apellido, correo, direccion, municipio, barrio, telefono, estado FROM cliente WHERE id = ?',
+            [id]
+        );
+
+        if (cliente.length === 0) {
+            return res.status(404).json({ error: 'Cliente no encontrado' });
+        }
+
+        const clienteSinSaldo = cliente[0]; // Ya no se llama "clienteConSaldo"
+        res.json(clienteSinSaldo);
+
+    } catch (error) {
+        console.error('Error al obtener el cliente:', error);
+        res.status(500).json({ error: 'Error interno al obtener el cliente' });
+    }
+};
+
+// Crear un cliente (sin cambios, ya que saldo_a_favor no se insertaba)
 exports.crearCliente = async (req, res) => {
     try {
         const { nombre, apellido, correo, direccion, municipio, barrio, telefono, estado } = req.body;
@@ -59,11 +112,12 @@ exports.crearCliente = async (req, res) => {
         res.status(201).json({ mensaje: 'Cliente creado correctamente' });
     } catch (error) {
         console.error('Error al crear el cliente:', error);
+
         res.status(500).json({ error: 'Error al crear el cliente' });
     }
 };
 
-// Actualizar un cliente
+// Actualizar un cliente (sin cambios, ya que saldo_a_favor no se actualizaba directamente)
 exports.actualizarCliente = async (req, res) => {
     try {
         const { id } = req.params;
@@ -84,7 +138,7 @@ exports.actualizarCliente = async (req, res) => {
     }
 };
 
-// Eliminar un cliente
+// Eliminar un cliente (sin cambios)
 exports.eliminarCliente = async (req, res) => {
     try {
         const { id } = req.params;
