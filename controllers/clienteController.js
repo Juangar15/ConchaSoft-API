@@ -20,7 +20,7 @@ exports.obtenerCliente = async (req, res) => {
             // *** CONSULTA SIMPLIFICADA: Leer el saldo directamente del campo en la tabla cliente ***
             // Asegúrate de seleccionar todas las columnas que la app Flutter espera recibir, además de saldo_a_favor
             const [cliente] = await db.query(
-                'SELECT id, nombre, apellido, correo, direccion, municipio, barrio, telefono, estado, saldo_a_favor FROM cliente WHERE id = ?',
+                'SELECT id, nombre, apellido, correo, direccion, municipio, barrio, telefono, estado FROM cliente WHERE id = ?',
                 [id]
             );
     
