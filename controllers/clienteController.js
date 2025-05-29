@@ -25,9 +25,16 @@ exports.obtenerClientes = async (req, res) => {
                     direccion LIKE ? OR
                     municipio LIKE ? OR
                     barrio LIKE ? OR
-                    telefono LIKE ?
+                    telefono LIKE ? OR
+                    documento LIKE ? OR      -- Añadido para búsqueda por documento
+                    tipo_documento LIKE ? OR -- Añadido para búsqueda por tipo_documento
+                    genero LIKE ?            -- Añadido para búsqueda por genero
             `;
-            queryParams = [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm];
+            // Asegúrate de que el número de '?' coincida con el número de parámetros
+            queryParams = [
+                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm,
+                searchTerm, searchTerm, searchTerm // Nuevos campos añadidos
+            ];
 
             // Manejar la búsqueda por estado (si 'search' es 'activo' o 'inactivo')
             // Asumiendo que 'estado' es un TINYINT(1) o BOOLEAN en MySQL
@@ -45,7 +52,7 @@ exports.obtenerClientes = async (req, res) => {
         // 4. Obtener los clientes para la página actual con paginación
         const sqlQuery = `
             SELECT
-                id, nombre, apellido, correo, direccion, municipio, barrio, telefono, estado
+                id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado
             FROM
                 cliente
             ${whereClause}
@@ -71,14 +78,14 @@ exports.obtenerClientes = async (req, res) => {
     }
 };
 
-// Obtener un cliente por ID (sin referencia a saldo_a_favor)
+// Obtener un cliente por ID
 exports.obtenerCliente = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Consulta sin saldo_a_favor
+        // Se añaden los nuevos campos a la consulta SELECT
         const [cliente] = await db.query(
-            'SELECT id, nombre, apellido, correo, direccion, municipio, barrio, telefono, estado FROM cliente WHERE id = ?',
+            'SELECT id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado FROM cliente WHERE id = ?',
             [id]
         );
 
@@ -86,8 +93,8 @@ exports.obtenerCliente = async (req, res) => {
             return res.status(404).json({ error: 'Cliente no encontrado' });
         }
 
-        const clienteSinSaldo = cliente[0]; // Ya no se llama "clienteConSaldo"
-        res.json(clienteSinSaldo);
+        const clienteEncontrado = cliente[0];
+        res.json(clienteEncontrado);
 
     } catch (error) {
         console.error('Error al obtener el cliente:', error);
@@ -95,37 +102,50 @@ exports.obtenerCliente = async (req, res) => {
     }
 };
 
-// Crear un cliente (sin cambios, ya que saldo_a_favor no se insertaba)
+// Crear un cliente
 exports.crearCliente = async (req, res) => {
     try {
-        const { nombre, apellido, correo, direccion, municipio, barrio, telefono, estado } = req.body;
+        // Se desestructuran los nuevos campos del req.body
+        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado } = req.body;
 
-        if (!nombre || !apellido || !correo || !direccion || !municipio || estado === undefined) {
+        // Se actualiza la validación para incluir los nuevos campos obligatorios
+        if (!nombre || !apellido || !tipo_documento || !documento || !correo || !fecha_nacimiento || !genero || !direccion || !municipio || estado === undefined) {
             return res.status(400).json({ error: 'Todos los campos obligatorios deben ser proporcionados' });
         }
 
+        // Se actualiza la consulta INSERT para incluir los nuevos campos
         await db.query(
-            'INSERT INTO cliente (nombre, apellido, correo, direccion, municipio, barrio, telefono, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [nombre, apellido, correo, direccion, municipio, barrio || null, telefono || null, estado]
+            'INSERT INTO cliente (nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nombre, apellido, tipo_documento, documento, correo, telefono || null, fecha_nacimiento, genero, direccion, municipio, barrio || null, estado]
         );
 
         res.status(201).json({ mensaje: 'Cliente creado correctamente' });
     } catch (error) {
         console.error('Error al crear el cliente:', error);
-
+        // Manejo de error específico para duplicidad de documento/correo
+        if (error.code === 'ER_DUP_ENTRY') {
+            if (error.sqlMessage.includes('documento')) {
+                return res.status(409).json({ error: 'El número de documento ya está registrado' });
+            }
+            if (error.sqlMessage.includes('correo')) {
+                return res.status(409).json({ error: 'El correo electrónico ya está registrado' });
+            }
+        }
         res.status(500).json({ error: 'Error al crear el cliente' });
     }
 };
 
-// Actualizar un cliente (sin cambios, ya que saldo_a_favor no se actualizaba directamente)
+// Actualizar un cliente
 exports.actualizarCliente = async (req, res) => {
     try {
         const { id } = req.params;
-        const { nombre, apellido, correo, direccion, municipio, barrio, telefono, estado } = req.body;
+        // Se desestructuran los nuevos campos del req.body
+        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado } = req.body;
 
+        // Se actualiza la consulta UPDATE para incluir los nuevos campos
         const [result] = await db.query(
-            'UPDATE cliente SET nombre = ?, apellido = ?, correo = ?, direccion = ?, municipio = ?, barrio = ?, telefono = ?, estado = ? WHERE id = ?',
-            [nombre, apellido, correo, direccion, municipio, barrio, telefono, estado, id]
+            'UPDATE cliente SET nombre = ?, apellido = ?, tipo_documento = ?, documento = ?, correo = ?, telefono = ?, fecha_nacimiento = ?, genero = ?, direccion = ?, municipio = ?, barrio = ?, estado = ? WHERE id = ?',
+            [nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado, id]
         );
 
         if (result.affectedRows === 0) {
@@ -134,11 +154,20 @@ exports.actualizarCliente = async (req, res) => {
         res.json({ mensaje: 'Cliente actualizado correctamente' });
     } catch (error) {
         console.error('Error al actualizar el cliente:', error);
+        // Manejo de error específico para duplicidad de documento/correo al actualizar
+        if (error.code === 'ER_DUP_ENTRY') {
+            if (error.sqlMessage.includes('documento')) {
+                return res.status(409).json({ error: 'El número de documento ya está registrado para otro cliente' });
+            }
+            if (error.sqlMessage.includes('correo')) {
+                return res.status(409).json({ error: 'El correo electrónico ya está registrado para otro cliente' });
+            }
+        }
         res.status(500).json({ error: 'Error al actualizar el cliente' });
     }
 };
 
-// Eliminar un cliente (sin cambios)
+// Eliminar un cliente (sin cambios, ya que no se afectaron sus campos)
 exports.eliminarCliente = async (req, res) => {
     try {
         const { id } = req.params;
@@ -150,6 +179,8 @@ exports.eliminarCliente = async (req, res) => {
         res.json({ mensaje: 'Cliente eliminado correctamente' });
     } catch (error) {
         console.error('Error al eliminar el cliente:', error);
+        // Es importante recordar que si hay FKs con ON DELETE RESTRICT,
+        // este DELETE fallará si el cliente tiene registros asociados.
         res.status(500).json({ error: 'Error al eliminar el cliente' });
     }
 };
