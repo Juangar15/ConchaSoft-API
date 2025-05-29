@@ -130,10 +130,8 @@ exports.requestPasswordReset = async (req, res) => {
         <p>Tu código de recuperación es: <strong>${resetToken}</strong></p>
         <p>Este código es válido por 1 hora.</p>
         <p>Si no solicitaste esto, por favor ignora este correo. Tu contraseña no ha sido modificada.</p>
-        <p>También puedes usar el siguiente enlace para ir directamente a restablecer tu contraseña:</p>
-        <p><a href="${process.env.FRONTEND_URL}/resetear-contrasena?email=${encodeURIComponent(email)}&token=${resetToken}">Restablecer Contraseña</a></p>
         <p>Gracias,</p>
-        <p>El equipo de tu ConchaSoft</p>
+        <p>El equipo de ConchaSoft</p>
       `,
     };
 
