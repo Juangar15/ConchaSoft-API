@@ -23,21 +23,21 @@ exports.obtenerClientes = async (req, res) => {
                     apellido LIKE ? OR
                     correo LIKE ? OR
                     direccion LIKE ? OR
+                    departamento LIKE ? OR  -- ¡Campo nuevo añadido aquí!
                     municipio LIKE ? OR
                     barrio LIKE ? OR
                     telefono LIKE ? OR
-                    documento LIKE ? OR      -- Añadido para búsqueda por documento
-                    tipo_documento LIKE ? OR -- Añadido para búsqueda por tipo_documento
-                    genero LIKE ?            -- Añadido para búsqueda por genero
+                    documento LIKE ? OR
+                    tipo_documento LIKE ? OR
+                    genero LIKE ?
             `;
             // Asegúrate de que el número de '?' coincida con el número de parámetros
             queryParams = [
-                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm,
-                searchTerm, searchTerm, searchTerm // Nuevos campos añadidos
+                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, // Estos son los 5 primeros (nombre, apellido, correo, direccion, DEPARTAMENTO)
+                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm // Estos son los 6 restantes (municipio, barrio, telefono, documento, tipo_documento, genero)
             ];
 
             // Manejar la búsqueda por estado (si 'search' es 'activo' o 'inactivo')
-            // Asumiendo que 'estado' es un TINYINT(1) o BOOLEAN en MySQL
             if (search.toLowerCase() === 'activo') {
                 whereClause += (whereClause ? ' OR ' : ' WHERE ') + 'estado = 1'; // 1 para true en MySQL
             } else if (search.toLowerCase() === 'inactivo') {
@@ -52,7 +52,7 @@ exports.obtenerClientes = async (req, res) => {
         // 4. Obtener los clientes para la página actual con paginación
         const sqlQuery = `
             SELECT
-                id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado
+                id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado -- ¡Campo nuevo añadido aquí!
             FROM
                 cliente
             ${whereClause}
@@ -85,7 +85,7 @@ exports.obtenerCliente = async (req, res) => {
 
         // Se añaden los nuevos campos a la consulta SELECT
         const [cliente] = await db.query(
-            'SELECT id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado FROM cliente WHERE id = ?',
+            'SELECT id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado FROM cliente WHERE id = ?', // ¡Campo nuevo añadido aquí!
             [id]
         );
 
@@ -106,17 +106,17 @@ exports.obtenerCliente = async (req, res) => {
 exports.crearCliente = async (req, res) => {
     try {
         // Se desestructuran los nuevos campos del req.body
-        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado } = req.body;
+        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado } = req.body; // ¡Campo nuevo añadido aquí!
 
-        // Se actualiza la validación para incluir los nuevos campos obligatorios
-        if (!nombre || !apellido || !tipo_documento || !documento || !correo || !fecha_nacimiento || !genero || !direccion || !municipio || estado === undefined) {
-            return res.status(400).json({ error: 'Todos los campos obligatorios deben ser proporcionados' });
+        // Se actualiza la validación para incluir el nuevo campo obligatorio 'departamento'
+        if (!nombre || !apellido || !tipo_documento || !documento || !correo || !fecha_nacimiento || !genero || !direccion || !departamento || !municipio || estado === undefined) {
+            return res.status(400).json({ error: 'Todos los campos obligatorios (nombre, apellido, tipo_documento, documento, correo, fecha_nacimiento, genero, direccion, departamento, municipio, estado) deben ser proporcionados.' });
         }
 
-        // Se actualiza la consulta INSERT para incluir los nuevos campos
+        // Se actualiza la consulta INSERT para incluir el nuevo campo 'departamento'
         await db.query(
-            'INSERT INTO cliente (nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nombre, apellido, tipo_documento, documento, correo, telefono || null, fecha_nacimiento, genero, direccion, municipio, barrio || null, estado]
+            'INSERT INTO cliente (nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', // ¡Campo nuevo añadido aquí!
+            [nombre, apellido, tipo_documento, documento, correo, telefono || null, fecha_nacimiento, genero, direccion, departamento, municipio, barrio || null, estado] // ¡Campo nuevo añadido aquí!
         );
 
         res.status(201).json({ mensaje: 'Cliente creado correctamente' });
@@ -140,12 +140,12 @@ exports.actualizarCliente = async (req, res) => {
     try {
         const { id } = req.params;
         // Se desestructuran los nuevos campos del req.body
-        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado } = req.body;
+        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado } = req.body; // ¡Campo nuevo añadido aquí!
 
-        // Se actualiza la consulta UPDATE para incluir los nuevos campos
+        // Se actualiza la consulta UPDATE para incluir el nuevo campo 'departamento'
         const [result] = await db.query(
-            'UPDATE cliente SET nombre = ?, apellido = ?, tipo_documento = ?, documento = ?, correo = ?, telefono = ?, fecha_nacimiento = ?, genero = ?, direccion = ?, municipio = ?, barrio = ?, estado = ? WHERE id = ?',
-            [nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, municipio, barrio, estado, id]
+            'UPDATE cliente SET nombre = ?, apellido = ?, tipo_documento = ?, documento = ?, correo = ?, telefono = ?, fecha_nacimiento = ?, genero = ?, direccion = ?, departamento = ?, municipio = ?, barrio = ?, estado = ? WHERE id = ?', // ¡Campo nuevo añadido aquí!
+            [nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado, id] // ¡Campo nuevo añadido aquí!
         );
 
         if (result.affectedRows === 0) {
