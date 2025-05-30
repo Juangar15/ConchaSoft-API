@@ -6,17 +6,31 @@ const db = require('../db');
 
 const crearRol = async (req, res) => {
     try {
-        const { rol, descripcion } = req.body;
+        // Asegúrate de que tu frontend envía 'rol', 'descripcion' y opcionalmente 'estado'.
+        // Si no se envía 'estado', la columna con DEFAULT TRUE en la DB lo establecerá.
+        const { rol, descripcion, estado } = req.body; 
+
         if (!rol) {
             return res.status(400).json({ error: "El campo 'rol' es obligatorio" });
         }
 
-        const [result] = await db.query("INSERT INTO rol (rol, descripcion) VALUES (?, ?)", [rol, descripcion]);
+        // Si quieres que el backend siempre lo ponga en true al crear, ignora 'estado' del req.body
+        // y usa 'true' directamente, o confía en el DEFAULT TRUE de la DB.
+        // Si el frontend puede especificarlo, úsalo, si no, defínelo aquí.
+        // Para simplicidad y consistencia con un estado por defecto, vamos a pasarlo
+        // si viene, o usar true si no.
+        const estadoInicial = estado !== undefined ? estado : true; // Si 'estado' no se envía, usa true.
 
-        res.status(201).json({ id: result.insertId, rol, descripcion });
+        // Añade 'estado' a la inserción
+        const [result] = await db.query(
+            "INSERT INTO rol (rol, descripcion, estado) VALUES (?, ?, ?)", 
+            [rol, descripcion, estadoInicial]
+        );
+
+        // Devuelve el estado en la respuesta
+        res.status(201).json({ id: result.insertId, rol, descripcion, estado: estadoInicial });
     } catch (error) {
         console.error("Error al crear rol:", error);
-        // Manejar error si el nombre del rol ya existe
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'El nombre del rol ya existe.' });
         }
@@ -26,7 +40,8 @@ const crearRol = async (req, res) => {
 
 const obtenerRoles = async (req, res) => {
     try {
-        const [roles] = await db.query("SELECT * FROM rol");
+        // Selecciona explícitamente todas las columnas, incluyendo 'estado'
+        const [roles] = await db.query("SELECT id, rol, descripcion, estado FROM rol");
         res.json(roles);
     } catch (error) {
         console.error("Error al obtener roles:", error);
@@ -37,7 +52,8 @@ const obtenerRoles = async (req, res) => {
 const obtenerRolPorId = async (req, res) => {
     try {
         const { id } = req.params;
-        const [rol] = await db.query("SELECT * FROM rol WHERE id = ?", [id]);
+        // Selecciona explícitamente todas las columnas, incluyendo 'estado'
+        const [rol] = await db.query("SELECT id, rol, descripcion, estado FROM rol WHERE id = ?", [id]);
 
         if (rol.length === 0) {
             return res.status(404).json({ error: "Rol no encontrado" });
@@ -53,15 +69,22 @@ const obtenerRolPorId = async (req, res) => {
 const actualizarRol = async (req, res) => {
     try {
         const { id } = req.params;
-        const { rol, descripcion } = req.body;
+        // Ahora también esperamos 'estado' del body
+        const { rol, descripcion, estado } = req.body; 
 
-        if (!rol) { // Asegurarse de que el campo rol no esté vacío
+        if (!rol) {
             return res.status(400).json({ error: "El campo 'rol' es obligatorio para actualizar." });
         }
 
+        // Valida que 'estado' sea un booleano (opcional, pero buena práctica)
+        if (typeof estado !== 'boolean' && estado !== undefined && estado !== null) {
+            return res.status(400).json({ error: "El campo 'estado' debe ser un booleano." });
+        }
+
+        // Modifica la consulta SQL para incluir la actualización de 'estado'
         const [result] = await db.query(
-            "UPDATE rol SET rol = ?, descripcion = ? WHERE id = ?",
-            [rol, descripcion, id]
+            "UPDATE rol SET rol = ?, descripcion = ?, estado = ? WHERE id = ?",
+            [rol, descripcion, estado, id]
         );
 
         if (result.affectedRows === 0) {
@@ -71,7 +94,7 @@ const actualizarRol = async (req, res) => {
         res.json({ message: "Rol actualizado correctamente" });
     } catch (error) {
         console.error("Error al actualizar rol:", error);
-        if (error.code === 'ER_DUP_ENTRY') { // Manejar si el nuevo nombre de rol ya existe
+        if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'El nombre del rol ya existe.' });
         }
         res.status(500).json({ error: "Error interno del servidor" });
