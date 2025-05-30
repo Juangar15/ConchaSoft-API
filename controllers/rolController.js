@@ -40,12 +40,70 @@ const crearRol = async (req, res) => {
 
 const obtenerRoles = async (req, res) => {
     try {
-        // Selecciona explícitamente todas las columnas, incluyendo 'estado'
-        const [roles] = await db.query("SELECT id, rol, descripcion, estado FROM rol");
-        res.json(roles);
+        // 1. Obtener parámetros de consulta
+        const { page = 1, limit = 10, search } = req.query; // Valores predeterminados
+        const pageNumber = parseInt(page, 10);
+        const limitNumber = parseInt(limit, 10);
+
+        // Calcular el OFFSET (el número de filas a saltar)
+        const offset = (pageNumber - 1) * limitNumber;
+
+        // 2. Construir la cláusula WHERE para el filtro de búsqueda
+        let whereClause = '';
+        let queryParams = [];
+
+        if (search) {
+            const searchTerm = `%${search}%`; // Para búsquedas con LIKE
+            whereClause = `
+                WHERE
+                    rol LIKE ? OR
+                    descripcion LIKE ? 
+            `;
+            queryParams = [
+                searchTerm, searchTerm
+            ];
+
+            // Manejar la búsqueda por estado (si 'search' es 'activo' o 'inactivo')
+            if (search.toLowerCase() === 'activo') {
+                whereClause += (whereClause ? ' OR ' : ' WHERE ') + 'estado = 1'; // 1 para true en MySQL
+            } else if (search.toLowerCase() === 'inactivo') {
+                whereClause += (whereClause ? ' OR ' : ' WHERE ') + 'estado = 0'; // 0 para false en MySQL
+            }
+        }
+
+        // 3. Obtener el total de elementos que coinciden con el filtro (sin paginación)
+        const [totalRows] = await db.query(`SELECT COUNT(*) AS totalItems FROM rol ${whereClause}`, queryParams);
+        const totalItems = totalRows[0].totalItems;
+
+        // 4. Obtener los roles para la página actual con paginación
+        const sqlQuery = `
+            SELECT
+                id, rol, descripcion, estado
+            FROM
+                rol
+            ${whereClause}
+            ORDER BY
+                rol ASC
+            LIMIT ? OFFSET ?;
+        `;
+        // Los queryParams se extienden con limitNumber y offset para la paginación
+        const [roles] = await db.query(sqlQuery, [...queryParams, limitNumber, offset]);
+
+        // No es necesario formatear fechas para roles a menos que tengas campos de fecha
+        // const rolesFormateados = roles.map(rol => ({ ...rol })); // Si no hay fechas, no se necesita mapear
+
+        // 5. Devolver los datos y la información de paginación
+        res.json({
+            roles: roles, // Envía los roles directamente si no necesitas formateo
+            totalItems: totalItems,
+            currentPage: pageNumber,
+            itemsPerPage: limitNumber,
+            totalPages: Math.ceil(totalItems / limitNumber),
+        });
+
     } catch (error) {
-        console.error("Error al obtener roles:", error);
-        res.status(500).json({ error: "Error interno del servidor" });
+        console.error("Error al obtener roles con paginación/búsqueda:", error);
+        res.status(500).json({ error: "Error interno del servidor al obtener roles" });
     }
 };
 
