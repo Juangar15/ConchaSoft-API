@@ -1,5 +1,32 @@
 const db = require('../db'); // Asegúrate de que esta conexión a la base de datos sea la correcta.
 
+// Función auxiliar para formatear la fecha a YYYY-MM-DD
+// Esta función se encarga de que, sin importar si la fecha viene como
+// "2004-01-21T00:00:00.000Z" (de la DB) o "2004-01-21" (del frontend),
+// siempre se transforme a "YYYY-MM-DD".
+const formatDateToYYYYMMDD = (dateString) => {
+    if (!dateString) return null; // Retorna null si la cadena de fecha es vacía o nula
+
+    try {
+        const dateObj = new Date(dateString);
+
+        // Verifica si la fecha es válida. new Date() puede devolver "Invalid Date"
+        if (isNaN(dateObj.getTime())) {
+            console.warn(`Fecha inválida proporcionada para formateo: ${dateString}`);
+            return null; // Retorna null si la fecha no es parseable
+        }
+
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0'); // Los meses son de 0-11, por eso +1
+        const day = String(dateObj.getDate()).padStart(2, '0');
+
+        return `${year}-${month}-${day}`;
+    } catch (e) {
+        console.error("Error al formatear la fecha:", dateString, e);
+        return null; // En caso de un error inesperado al parsear
+    }
+};
+
 // Obtener todos los clientes con búsqueda y paginación
 exports.obtenerClientes = async (req, res) => {
     try {
@@ -23,7 +50,7 @@ exports.obtenerClientes = async (req, res) => {
                     apellido LIKE ? OR
                     correo LIKE ? OR
                     direccion LIKE ? OR
-                    departamento LIKE ? OR  -- ¡Campo nuevo añadido aquí!
+                    departamento LIKE ? OR
                     municipio LIKE ? OR
                     barrio LIKE ? OR
                     telefono LIKE ? OR
@@ -31,10 +58,9 @@ exports.obtenerClientes = async (req, res) => {
                     tipo_documento LIKE ? OR
                     genero LIKE ?
             `;
-            // Asegúrate de que el número de '?' coincida con el número de parámetros
             queryParams = [
-                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, // Estos son los 5 primeros (nombre, apellido, correo, direccion, DEPARTAMENTO)
-                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm // Estos son los 6 restantes (municipio, barrio, telefono, documento, tipo_documento, genero)
+                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm,
+                searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm
             ];
 
             // Manejar la búsqueda por estado (si 'search' es 'activo' o 'inactivo')
@@ -52,7 +78,7 @@ exports.obtenerClientes = async (req, res) => {
         // 4. Obtener los clientes para la página actual con paginación
         const sqlQuery = `
             SELECT
-                id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado -- ¡Campo nuevo añadido aquí!
+                id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado
             FROM
                 cliente
             ${whereClause}
@@ -60,12 +86,20 @@ exports.obtenerClientes = async (req, res) => {
                 nombre ASC, apellido ASC
             LIMIT ? OFFSET ?;
         `;
-        // Los queryParams para la paginación se añaden al final
         const [clientes] = await db.query(sqlQuery, [...queryParams, limitNumber, offset]);
+
+        // ****** MODIFICACIÓN CLAVE AQUÍ (Para GET: Formatear la fecha para el frontend) ******
+        // Mapea los clientes para formatear la fecha de nacimiento
+        const clientesFormateados = clientes.map(cliente => ({
+            ...cliente,
+            // Asegura que fecha_nacimiento siempre esté en YYYY-MM-DD para el frontend
+            fecha_nacimiento: formatDateToYYYYMMDD(cliente.fecha_nacimiento)
+        }));
+        // *************************************************************************************
 
         // 5. Devolver los datos y el total
         res.json({
-            clientes: clientes,
+            clientes: clientesFormateados, // Usar los clientes formateados
             totalItems: totalItems,
             currentPage: pageNumber,
             itemsPerPage: limitNumber,
@@ -83,9 +117,8 @@ exports.obtenerCliente = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Se añaden los nuevos campos a la consulta SELECT
         const [cliente] = await db.query(
-            'SELECT id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado FROM cliente WHERE id = ?', // ¡Campo nuevo añadido aquí!
+            'SELECT id, nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado FROM cliente WHERE id = ?',
             [id]
         );
 
@@ -93,7 +126,13 @@ exports.obtenerCliente = async (req, res) => {
             return res.status(404).json({ error: 'Cliente no encontrado' });
         }
 
-        const clienteEncontrado = cliente[0];
+        let clienteEncontrado = cliente[0];
+
+        // ****** MODIFICACIÓN CLAVE AQUÍ (Para GET por ID: Formatear la fecha para el frontend) ******
+        // Asegura que fecha_nacimiento siempre esté en YYYY-MM-DD para el frontend
+        clienteEncontrado.fecha_nacimiento = formatDateToYYYYMMDD(clienteEncontrado.fecha_nacimiento);
+        // *********************************************************************************************
+
         res.json(clienteEncontrado);
 
     } catch (error) {
@@ -105,24 +144,29 @@ exports.obtenerCliente = async (req, res) => {
 // Crear un cliente
 exports.crearCliente = async (req, res) => {
     try {
-        // Se desestructuran los nuevos campos del req.body
-        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado } = req.body; // ¡Campo nuevo añadido aquí!
+        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado } = req.body;
 
-        // Se actualiza la validación para incluir el nuevo campo obligatorio 'departamento'
         if (!nombre || !apellido || !tipo_documento || !documento || !correo || !fecha_nacimiento || !genero || !direccion || !departamento || !municipio || estado === undefined) {
             return res.status(400).json({ error: 'Todos los campos obligatorios (nombre, apellido, tipo_documento, documento, correo, fecha_nacimiento, genero, direccion, departamento, municipio, estado) deben ser proporcionados.' });
         }
 
-        // Se actualiza la consulta INSERT para incluir el nuevo campo 'departamento'
+        // ****** MODIFICACIÓN CLAVE AQUÍ (Para POST: Formatear la fecha para la DB) ******
+        // Asegura que la fecha_nacimiento se guarde en YYYY-MM-DD
+        const fechaNacimientoParaDB = formatDateToYYYYMMDD(fecha_nacimiento);
+        if (fechaNacimientoParaDB === null && fecha_nacimiento !== null && fecha_nacimiento !== '') {
+            // Si el frontend envió un valor pero no se pudo formatear, es un error
+            return res.status(400).json({ error: 'Formato de fecha de nacimiento inválido.' });
+        }
+        // ******************************************************************************
+
         await db.query(
-            'INSERT INTO cliente (nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', // ¡Campo nuevo añadido aquí!
-            [nombre, apellido, tipo_documento, documento, correo, telefono || null, fecha_nacimiento, genero, direccion, departamento, municipio, barrio || null, estado] // ¡Campo nuevo añadido aquí!
+            'INSERT INTO cliente (nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nombre, apellido, tipo_documento, documento, correo, telefono || null, fechaNacimientoParaDB, genero, direccion, departamento, municipio, barrio || null, estado]
         );
 
         res.status(201).json({ mensaje: 'Cliente creado correctamente' });
     } catch (error) {
         console.error('Error al crear el cliente:', error);
-        // Manejo de error específico para duplicidad de documento/correo
         if (error.code === 'ER_DUP_ENTRY') {
             if (error.sqlMessage.includes('documento')) {
                 return res.status(409).json({ error: 'El número de documento ya está registrado' });
@@ -131,6 +175,8 @@ exports.crearCliente = async (req, res) => {
                 return res.status(409).json({ error: 'El correo electrónico ya está registrado' });
             }
         }
+        // Puedes añadir un manejo de error específico para errores de fecha si db.query
+        // te da un código de error reconocible para eso. Por ahora, el 500 genérico.
         res.status(500).json({ error: 'Error al crear el cliente' });
     }
 };
@@ -139,13 +185,19 @@ exports.crearCliente = async (req, res) => {
 exports.actualizarCliente = async (req, res) => {
     try {
         const { id } = req.params;
-        // Se desestructuran los nuevos campos del req.body
-        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado } = req.body; // ¡Campo nuevo añadido aquí!
+        const { nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado } = req.body;
 
-        // Se actualiza la consulta UPDATE para incluir el nuevo campo 'departamento'
+        // ****** MODIFICACIÓN CLAVE AQUÍ (Para PUT: Formatear la fecha para la DB) ******
+        // Asegura que la fecha_nacimiento se guarde en YYYY-MM-DD
+        const fechaNacimientoParaDB = formatDateToYYYYMMDD(fecha_nacimiento);
+        if (fechaNacimientoParaDB === null && fecha_nacimiento !== null && fecha_nacimiento !== '') {
+            return res.status(400).json({ error: 'Formato de fecha de nacimiento inválido.' });
+        }
+        // ******************************************************************************
+
         const [result] = await db.query(
-            'UPDATE cliente SET nombre = ?, apellido = ?, tipo_documento = ?, documento = ?, correo = ?, telefono = ?, fecha_nacimiento = ?, genero = ?, direccion = ?, departamento = ?, municipio = ?, barrio = ?, estado = ? WHERE id = ?', // ¡Campo nuevo añadido aquí!
-            [nombre, apellido, tipo_documento, documento, correo, telefono, fecha_nacimiento, genero, direccion, departamento, municipio, barrio, estado, id] // ¡Campo nuevo añadido aquí!
+            'UPDATE cliente SET nombre = ?, apellido = ?, tipo_documento = ?, documento = ?, correo = ?, telefono = ?, fecha_nacimiento = ?, genero = ?, direccion = ?, departamento = ?, municipio = ?, barrio = ?, estado = ? WHERE id = ?',
+            [nombre, apellido, tipo_documento, documento, correo, telefono, fechaNacimientoParaDB, genero, direccion, departamento, municipio, barrio, estado, id]
         );
 
         if (result.affectedRows === 0) {
@@ -154,7 +206,6 @@ exports.actualizarCliente = async (req, res) => {
         res.json({ mensaje: 'Cliente actualizado correctamente' });
     } catch (error) {
         console.error('Error al actualizar el cliente:', error);
-        // Manejo de error específico para duplicidad de documento/correo al actualizar
         if (error.code === 'ER_DUP_ENTRY') {
             if (error.sqlMessage.includes('documento')) {
                 return res.status(409).json({ error: 'El número de documento ya está registrado para otro cliente' });
@@ -179,8 +230,6 @@ exports.eliminarCliente = async (req, res) => {
         res.json({ mensaje: 'Cliente eliminado correctamente' });
     } catch (error) {
         console.error('Error al eliminar el cliente:', error);
-        // Es importante recordar que si hay FKs con ON DELETE RESTRICT,
-        // este DELETE fallará si el cliente tiene registros asociados.
         res.status(500).json({ error: 'Error al eliminar el cliente' });
     }
 };
