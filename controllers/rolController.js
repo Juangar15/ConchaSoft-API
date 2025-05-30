@@ -154,6 +154,7 @@ const obtenerPermisosPorRol = async (req, res) => {
  * Espera un array de `permisoIds` en el cuerpo de la solicitud.
  * Elimina todos los permisos existentes para el rol y luego inserta los nuevos.
  */
+
 const asignarPermisosARol = async (req, res) => {
     const { id } = req.params; // id del rol
     const { permisoIds } = req.body; // Esto debería ser un array de IDs de permisos [1, 2, 5]
@@ -162,26 +163,49 @@ const asignarPermisosARol = async (req, res) => {
         return res.status(400).json({ error: 'ID de rol y un array de IDs de permisos son obligatorios.' });
     }
 
+    let connection; // <-- Declara la variable para la conexión aquí
+
     try {
-        await db.beginTransaction(); // Inicia una transacción para asegurar atomicidad
+        // 1. Obtener una conexión individual del pool
+        // ¡Esta es la clave! 'connection' tendrá los métodos de transacción
+        connection = await db.getConnection(); 
 
-        // 1. Eliminar todos los permisos existentes para este rol
-        await db.query('DELETE FROM rol_permiso WHERE id_rol = ?', [id]);
+        // 2. Iniciar la transacción con la conexión obtenida
+        await connection.beginTransaction(); 
 
-        // 2. Insertar los nuevos permisos
+        // 3. Eliminar todos los permisos existentes para este rol
+        // Usa 'connection.query' (no 'db.query')
+        await connection.query('DELETE FROM rol_permiso WHERE id_rol = ?', [id]);
+
+        // 4. Insertar los nuevos permisos
         if (permisoIds.length > 0) {
-            // Prepara los valores para la inserción masiva
             const values = permisoIds.map(permisoId => [id, permisoId]);
-            await db.query('INSERT INTO rol_permiso (id_rol, id_permiso) VALUES ?', [values]);
+            // Usa 'connection.query' (no 'db.query')
+            await connection.query('INSERT INTO rol_permiso (id_rol, id_permiso) VALUES ?', [values]);
         }
 
-        await db.commit(); // Confirma la transacción
+        // 5. Si todo fue bien, confirma la transacción
+        await connection.commit(); 
 
         res.status(200).json({ message: 'Permisos asignados al rol correctamente.' });
+
     } catch (err) {
-        await db.rollback(); // Deshace la transacción en caso de error
+        // 6. Si hubo un error, revierte la transacción
+        // Asegúrate de que 'connection' exista antes de intentar el rollback
+        if (connection) { 
+            try {
+                await connection.rollback(); 
+            } catch (rollbackError) {
+                console.error("Error al intentar deshacer la transacción:", rollbackError);
+            }
+        }
         console.error('Error al asignar permisos al rol:', err);
-        res.status(500).json({ error: 'Error al asignar permisos al rol.' });
+        res.status(500).json({ error: 'Error al asignar permisos al rol.', details: err.message }); // Añade detalles para depuración
+    } finally {
+        // 7. Es crucial liberar la conexión de vuelta al pool en el bloque finally
+        if (connection) { // Asegúrate de que la conexión fue establecida
+            connection.release(); 
+        }
     }
 };
 
