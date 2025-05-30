@@ -61,7 +61,9 @@ exports.iniciarSesion = async (req, res) => {
             return res.status(400).json({ error: 'Todos los campos son obligatorios' });
         }
 
-        const [usuarios] = await db.query('SELECT login, contraseña, id_rol FROM usuario WHERE login = ?', [login]);
+        // === CAMBIO AQUÍ: SELECCIONAR TAMBIÉN EL CAMPO 'correo' ===
+        const [usuarios] = await db.query('SELECT login, contraseña, correo, id_rol FROM usuario WHERE login = ?', [login]);
+        // =========================================================
 
         if (usuarios.length === 0) {
             return res.status(400).json({ error: 'Usuario o contraseña incorrectos' });
@@ -74,9 +76,22 @@ exports.iniciarSesion = async (req, res) => {
             return res.status(400).json({ error: 'Usuario o contraseña incorrectos' });
         }
 
+        // Asegúrate de que process.env.JWT_SECRET esté definido en tu archivo .env
         const token = jwt.sign({ login: usuario.login, id_rol: usuario.id_rol }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-        res.json({ mensaje: 'Inicio de sesión exitoso', token });
+        // === CAMBIO CLAVE AQUÍ: ENVIAR EL OBJETO 'user' CON login Y correo ===
+        res.json({
+            mensaje: 'Inicio de sesión exitoso',
+            token,
+            user: {
+                login: usuario.login,
+                correo: usuario.correo,
+                // Puedes incluir id_rol aquí si lo necesitas en el frontend para algo más
+                // id_rol: usuario.id_rol
+            }
+        });
+        // ====================================================================
+
     } catch (error) {
         console.error('Error al iniciar sesión:', error);
         res.status(500).json({ error: 'Error interno del servidor al iniciar sesión.' });
