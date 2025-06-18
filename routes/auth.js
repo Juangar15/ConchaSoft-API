@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware'); // <--- **IMPORTACIÓN ACTUALIZADA**
+const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware');
 
 // Rutas de Autenticación existentes
 router.post('/register', authController.registrarUsuario);
@@ -12,7 +12,7 @@ router.post('/request-password-reset', authController.requestPasswordReset);
 router.post('/verify-reset-code', authController.verifyResetCode);
 router.post('/reset-password', authController.resetPassword);
 
-// --- NUEVAS RUTAS PARA GESTIÓN DE USUARIOS (protegidas por token y permisos) ---
+// --- RUTAS PARA GESTIÓN DE USUARIOS (protegidas por token y permisos) ---
 
 // Ruta para obtener datos de un usuario específico (propio o de otro si es admin)
 router.get('/users/:login', verificarToken, authController.getUsuarioByLogin);
@@ -28,6 +28,9 @@ router.get('/users', verificarToken, verificarPermiso('ver_usuarios'), authContr
 
 // Ruta para eliminar un usuario (solo para administradores)
 router.delete('/users/:login', verificarToken, verificarPermiso('eliminar_usuarios'), authController.deleteUser);
+
+// --- NUEVA RUTA: Alternar el estado activo/inactivo de un usuario (solo para administradores) ---
+router.put('/users/:login/toggle-status', verificarToken, verificarPermiso('administrar_usuarios'), authController.toggleUserStatus);
 
 
 module.exports = router;
