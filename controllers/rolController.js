@@ -162,20 +162,41 @@ const actualizarRol = async (req, res) => {
 const eliminarRol = async (req, res) => {
     try {
         const { id } = req.params;
+
+        // --- PASO 1: Verificar si hay usuarios asociados a este rol ---
+        const [usersWithRole] = await db.query('SELECT COUNT(*) AS totalUsers FROM usuario WHERE id_rol = ?', [id]);
+        const totalUsers = usersWithRole[0].totalUsers;
+
+        if (totalUsers > 0) {
+            return res.status(409).json({ error: `No se puede eliminar el rol porque tiene ${totalUsers} usuarios asociados. Por favor, reasigna o elimina los usuarios de este rol primero.` });
+        }
+
+        // --- PASO 2: Opcional, verificar si hay permisos asociados al rol ---
+        // (Tu código ya tiene una sección de 'rol_permiso', así que esta verificación es importante)
+        const [permissionsWithRole] = await db.query('SELECT COUNT(*) AS totalPermissions FROM rol_permiso WHERE id_rol = ?', [id]);
+        const totalPermissions = permissionsWithRole[0].totalPermissions;
+
+        if (totalPermissions > 0) {
+             return res.status(409).json({ error: `No se puede eliminar el rol porque tiene ${totalPermissions} permisos asociados. Por favor, desasigna los permisos de este rol primero.` });
+        }
+
+
+        // --- PASO 3: Si no hay usuarios ni permisos asociados, procede con la eliminación del rol ---
         const [result] = await db.query("DELETE FROM rol WHERE id = ?", [id]);
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({ error: "Rol no encontrado" });
+            return res.status(404).json({ error: "Rol no encontrado." });
         }
 
-        res.json({ message: "Rol eliminado correctamente" });
+        res.json({ message: "Rol eliminado correctamente." });
+
     } catch (error) {
         console.error("Error al eliminar rol:", error);
-        // Podrías añadir lógica para manejar la eliminación de un rol que tiene usuarios asignados
-        if (error.code === 'ER_ROW_IS_REFERENCED' || error.code === 'ER_NO_REFERENCED_ROW_2') {
-            return res.status(409).json({ error: 'No se puede eliminar el rol porque está asignado a usuarios o tiene permisos asociados.' });
-        }
-        res.status(500).json({ error: "Error interno del servidor" });
+        // Si tienes FOREIGN KEY CONSTRAINTS en tu DB, MySQL ya te daría un error
+        // pero esta lógica es más explícita y devuelve un mensaje más amigable.
+        // El 'ER_ROW_IS_REFERENCED' que tienes comentado ya es una forma de esto,
+        // pero la verificación previa te da más control y un mensaje más específico.
+        res.status(500).json({ error: "Error interno del servidor al eliminar el rol." });
     }
 };
 
