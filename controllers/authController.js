@@ -404,38 +404,51 @@ exports.getAllUsers = async (req, res) => {
 
 exports.deleteUser = async (req, res) => {
     try {
-        const { login } = req.params;
-        const adminLogin = req.user.login;
+        const { login: targetUserLogin } = req.params; // Renombramos 'login' a 'targetUserLogin' para claridad
+        const adminLogin = req.user.login; // El login del administrador que realiza la acción
+        const adminRole = req.user.id_rol; // El rol del administrador que realiza la acción (asumiendo que 1 es admin)
 
-        if (login === adminLogin) {
-            return res.status(400).json({ error: 'Un administrador no puede eliminarse a sí mismo.' });
+        // 1. Evitar que un administrador se elimine a sí mismo
+        if (targetUserLogin === adminLogin) {
+            return res.status(403).json({ error: 'Un administrador no puede eliminarse a sí mismo.' });
         }
 
-        const [result] = await db.query('DELETE FROM usuario WHERE login = ?', [login]);
+        // 2. Obtener el rol del usuario que se intenta eliminar
+        const [targetUsers] = await db.query('SELECT id_rol FROM usuario WHERE login = ?', [targetUserLogin]);
 
-        if (result.affectedRows === 0) {
+        if (targetUsers.length === 0) {
             return res.status(404).json({ error: 'Usuario no encontrado para eliminar.' });
         }
 
+        const targetUserRole = targetUsers[0].id_rol;
+
+        // 3. Implementar la lógica: Un administrador (rol 1) no puede eliminar a otro administrador (rol 1)
+        if (adminRole === 1 && targetUserRole === 1) {
+            return res.status(403).json({ error: 'Un administrador no puede eliminar a otro administrador.' });
+        }
+
+        // 4. Si pasa todas las validaciones, procede con la eliminación
+        const [result] = await db.query('DELETE FROM usuario WHERE login = ?', [targetUserLogin]);
+
+        if (result.affectedRows === 0) {
+            // Esto podría ocurrir si el usuario fue eliminado justo antes por otra acción concurrente
+            return res.status(404).json({ error: 'Usuario no encontrado o ya eliminado.' });
+        }
+
         res.status(200).json({ message: 'Usuario eliminado correctamente.' });
+
     } catch (error) {
         console.error('Error al eliminar usuario:', error);
         res.status(500).json({ error: 'Error interno del servidor al eliminar el usuario.' });
     }
 };
 
-// --- NUEVA FUNCIÓN: Alternar el estado activo/inactivo de un usuario ---
-/**
- * Permite a un administrador activar o desactivar la cuenta de un usuario.
- * Requiere 'login' en los parámetros y 'activo' (0 o 1) en el cuerpo.
- */
+
 exports.toggleUserStatus = async (req, res) => {
     try {
-        const { login } = req.params; // El login del usuario a modificar
-        const { activo } = req.body; // El nuevo estado (0 para inactivo, 1 para activo)
-        const adminLogin = req.user.login; // El login del administrador que realiza la acción
-
-        // Validaciones básicas
+        const { login } = req.params; 
+        const { activo } = req.body; 
+        const adminLogin = req.user.login; 
         if (activo === undefined || (activo !== 0 && activo !== 1)) {
             return res.status(400).json({ error: 'El estado "activo" debe ser 0 (inactivo) o 1 (activo).' });
         }
