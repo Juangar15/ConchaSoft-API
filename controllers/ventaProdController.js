@@ -12,6 +12,7 @@ exports.obtenerVentasProductos = async (req, res) => {
         `);
         res.json(ventaProd);
     } catch (error) {
+        ('Error al obtener la relación venta-producto:', error); // Mejor log detallado
         res.status(500).json({ error: 'Error al obtener la relación venta-producto' });
     }
 };
@@ -35,77 +36,10 @@ exports.obtenerVentaProducto = async (req, res) => {
 
         res.json(ventaProd[0]);
     } catch (error) {
+        ('Error al obtener la relación venta-producto específica:', error); // Mejor log detallado
         res.status(500).json({ error: 'Error al obtener la relación venta-producto' });
     }
 };
 
-exports.crearVentaProducto = async (req, res) => {
-    try {
-        const { id_venta, id_producto_talla, cantidad, precio_unitario, subtotal } = req.body;
-
-        if (!id_venta || !id_producto_talla || !cantidad || !precio_unitario || !subtotal) {
-            return res.status(400).json({ error: 'Todos los campos son obligatorios' });
-        }
-
-        const [ventaExiste] = await db.query('SELECT id FROM venta WHERE id = ?', [id_venta]);
-        if (ventaExiste.length === 0) {
-            return res.status(400).json({ error: 'Venta no válida' });
-        }
-
-        const [ptExiste] = await db.query('SELECT id FROM producto_talla WHERE id = ?', [id_producto_talla]);
-        if (ptExiste.length === 0) {
-            return res.status(400).json({ error: 'Producto-Talla no válida' });
-        }
-
-        await db.query(
-            'INSERT INTO venta_prod (id_venta, id_producto_talla, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)',
-            [id_venta, id_producto_talla, cantidad, precio_unitario, subtotal]
-        );
-
-        res.status(201).json({ mensaje: 'Venta-Producto agregada correctamente' });
-    } catch (error) {
-        res.status(500).json({ error: 'Error al agregar la venta-producto' });
-    }
-};
-
-exports.actualizarVentaProducto = async (req, res) => {
-    try {
-        const { id_venta, id_producto_talla } = req.params;
-        const { cantidad, precio_unitario, subtotal } = req.body;
-
-        if (!cantidad || !precio_unitario || !subtotal) {
-            return res.status(400).json({ error: 'Todos los campos son obligatorios' });
-        }
-
-        const [result] = await db.query(
-            'UPDATE venta_prod SET cantidad = ?, precio_unitario = ?, subtotal = ? WHERE id_venta = ? AND id_producto_talla = ?',
-            [cantidad, precio_unitario, subtotal, id_venta, id_producto_talla]
-        );
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Relación venta-producto no encontrada' });
-        }
-
-        res.json({ mensaje: 'Venta-Producto actualizada correctamente' });
-    } catch (error) {
-        res.status(500).json({ error: 'Error al actualizar la venta-producto' });
-    }
-};
-
-exports.eliminarVentaProducto = async (req, res) => {
-    try {
-        const { id_venta, id_producto_talla } = req.params;
-        const [result] = await db.query(
-            'DELETE FROM venta_prod WHERE id_venta = ? AND id_producto_talla = ?',
-            [id_venta, id_producto_talla]
-        );
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Relación venta-producto no encontrada' });
-        }
-
-        res.json({ mensaje: 'Venta-Producto eliminada correctamente' });
-    } catch (error) {
-        res.status(500).json({ error: 'Error al eliminar la venta-producto' });
-    }
-};
+// Se eliminan las funciones crearVentaProducto, actualizarVentaProducto y eliminarVentaProducto
+// ya que su lógica de modificación debe ser manejada por el ventaController u otros controladores de alto nivel.

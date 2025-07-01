@@ -19,7 +19,7 @@ exports.verificarToken = (req, res, next) => {
         next();
     } catch (error) {
         // En caso de que el token sea inválido o haya expirado
-        console.error('Error de verificación de token:', error); // Log para depuración
+        ('Error de verificación de token:', error); // Log para depuración
         res.status(403).json({ error: 'Token inválido o expirado.' });
     }
 };
@@ -52,7 +52,7 @@ exports.verificarPermiso = (permisoRequerido) => {
 
             next(); // Permite continuar con la ejecución de la ruta
         } catch (error) {
-            console.error('Error al verificar permisos:', error);
+            ('Error al verificar permisos:', error);
             res.status(500).json({ error: 'Error interno del servidor al verificar permisos.' });
         }
     };

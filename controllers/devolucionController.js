@@ -67,7 +67,7 @@ exports.crearDevolucion = async (req, res) => {
     
         } catch (error) {
             await connection.rollback(); // Revertir transacción si falla
-            console.error('Error al crear la devolución:', error);
+            ('Error al crear la devolución:', error);
             res.status(500).json({ error: 'Error al crear la devolución' });
     
         } finally {
@@ -176,7 +176,7 @@ exports.anularDevolucion = async (req, res) => {
     
         } catch (error) {
             await connection.rollback(); // Revertir transacción si falla
-            console.error('Error al anular la devolución:', error);
+            ('Error al anular la devolución:', error);
             res.status(500).json({ error: 'Error al anular la devolución' });
     
         } finally {

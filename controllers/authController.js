@@ -40,7 +40,6 @@ exports.registrarUsuario = async (req, res) => {
 
         res.status(201).json({ mensaje: 'Usuario registrado correctamente' });
     } catch (error) {
-        console.error('Error al registrar el usuario:', error);
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'El login o correo electrónico ya existen.' });
         }
@@ -95,7 +94,6 @@ exports.iniciarSesion = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error al iniciar sesión:', error);
         res.status(500).json({ error: 'Error interno del servidor al iniciar sesión.' });
     }
 };
@@ -119,7 +117,6 @@ exports.requestPasswordReset = async (req, res) => {
         const user = rows[0];
 
         if (!user) {
-            console.warn(`Intento de recuperación de contraseña para email no registrado: ${email}`);
             return res.status(200).json({ message: 'Si la dirección de correo electrónico está registrada, se ha enviado un código de recuperación.' });
         }
 
@@ -157,7 +154,6 @@ exports.requestPasswordReset = async (req, res) => {
         res.status(200).json({ message: 'Si la dirección de correo electrónico está registrada, se ha enviado un código de recuperación.' });
 
     } catch (error) {
-        console.error('Error al solicitar restablecimiento de contraseña:', error);
         res.status(500).json({ error: 'Error interno del servidor al procesar la solicitud.' });
     }
 };
@@ -201,7 +197,6 @@ exports.verifyResetCode = async (req, res) => {
         res.status(200).json({ message: 'Código verificado exitosamente. Procede a restablecer tu contraseña.', userLogin: tokenRecord.user_login });
 
     } catch (error) {
-        console.error('Error al verificar el código de restablecimiento:', error);
         res.status(500).json({ error: 'Error interno del servidor al verificar el código.' });
     }
 };
@@ -253,7 +248,6 @@ exports.resetPassword = async (req, res) => {
         res.status(200).json({ message: 'Contraseña restablecida exitosamente. Ahora puedes iniciar sesión con tu nueva contraseña.' });
 
     } catch (error) {
-        console.error('Error al restablecer la contraseña:', error);
         res.status(500).json({ error: 'Error interno del servidor al restablecer la contraseña.' });
     }
 };
@@ -280,7 +274,6 @@ exports.getUsuarioByLogin = async (req, res) => {
         res.status(200).json({ user: users[0] });
 
     } catch (error) {
-        console.error('Error al obtener datos del usuario:', error);
         res.status(500).json({ error: 'Error interno del servidor al obtener datos del usuario.' });
     }
 };
@@ -349,7 +342,6 @@ exports.editarUsuario = async (req, res) => {
         res.status(200).json({ mensaje: 'Usuario actualizado correctamente.' });
 
     } catch (error) {
-        console.error('Error al editar el usuario:', error);
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'El correo electrónico ya existe para otro usuario.' });
         }
@@ -383,7 +375,6 @@ exports.crearUsuarioPorAdmin = async (req, res) => {
 
         res.status(201).json({ mensaje: 'Usuario creado correctamente por el administrador.' });
     } catch (error) {
-        console.error('Error al crear el usuario por admin:', error);
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'El login o correo electrónico ya existen.' });
         }
@@ -397,7 +388,6 @@ exports.getAllUsers = async (req, res) => {
         const [users] = await db.query('SELECT login, correo, id_rol, activo FROM usuario');
         res.status(200).json({ users });
     } catch (error) {
-        console.error('Error al obtener la lista de usuarios:', error);
         res.status(500).json({ error: 'Error interno del servidor al obtener la lista de usuarios.' });
     }
 };
@@ -438,7 +428,6 @@ exports.deleteUser = async (req, res) => {
         res.status(200).json({ message: 'Usuario eliminado correctamente.' });
 
     } catch (error) {
-        console.error('Error al eliminar usuario:', error);
         res.status(500).json({ error: 'Error interno del servidor al eliminar el usuario.' });
     }
 };
@@ -477,7 +466,6 @@ exports.toggleUserStatus = async (req, res) => {
         res.status(200).json({ mensaje: `Usuario ${login} ha sido ${activo ? 'activado' : 'desactivado'} correctamente.` });
 
     } catch (error) {
-        console.error('Error al alternar el estado del usuario:', error);
         res.status(500).json({ error: 'Error interno del servidor al alternar el estado del usuario.' });
     }
 };

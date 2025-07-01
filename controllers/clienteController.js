@@ -8,7 +8,6 @@ const formatDateToYYYYMMDD = (dateString) => {
         const dateObj = new Date(dateString);
 
         if (isNaN(dateObj.getTime())) {
-            console.warn(`Fecha inválida proporcionada para formateo: ${dateString}`);
             return null;
         }
 
@@ -18,7 +17,7 @@ const formatDateToYYYYMMDD = (dateString) => {
 
         return `${year}-${month}-${day}`;
     } catch (e) {
-        console.error("Error al formatear la fecha:", dateString, e);
+        ("Error al formatear la fecha:", dateString, e);
         return null;
     }
 };
@@ -51,7 +50,7 @@ exports.obtenerClientes = async (req, res) => {
         res.json(clientesFormateados);
 
     } catch (error) {
-        console.error('Error al obtener los clientes desde la API (sin paginación):', error);
+        ('Error al obtener los clientes desde la API (sin paginación):', error);
         res.status(500).json({ error: 'Error al obtener los clientes' });
     }
 };
@@ -79,7 +78,7 @@ exports.obtenerCliente = async (req, res) => {
         res.json(clienteEncontrado);
 
     } catch (error) {
-        console.error('Error al obtener el cliente:', error);
+        ('Error al obtener el cliente:', error);
         res.status(500).json({ error: 'Error interno al obtener el cliente' });
     }
 };
@@ -105,7 +104,7 @@ exports.crearCliente = async (req, res) => {
 
         res.status(201).json({ mensaje: 'Cliente creado correctamente' });
     } catch (error) {
-        console.error('Error al crear el cliente:', error);
+        ('Error al crear el cliente:', error);
         if (error.code === 'ER_DUP_ENTRY') {
             if (error.sqlMessage.includes('documento')) {
                 return res.status(409).json({ error: 'El número de documento ya está registrado' });
@@ -139,7 +138,7 @@ exports.actualizarCliente = async (req, res) => {
         }
         res.json({ mensaje: 'Cliente actualizado correctamente' });
     } catch (error) {
-        console.error('Error al actualizar el cliente:', error);
+        ('Error al actualizar el cliente:', error);
         if (error.code === 'ER_DUP_ENTRY') {
             if (error.sqlMessage.includes('documento')) {
                 return res.status(409).json({ error: 'El número de documento ya está registrado para otro cliente' });
@@ -163,7 +162,7 @@ exports.eliminarCliente = async (req, res) => {
         }
         res.json({ mensaje: 'Cliente eliminado correctamente' });
     } catch (error) {
-        console.error('Error al eliminar el cliente:', error);
+        ('Error al eliminar el cliente:', error);
         res.status(500).json({ error: 'Error al eliminar el cliente' });
     }
 };

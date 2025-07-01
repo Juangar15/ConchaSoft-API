@@ -30,7 +30,7 @@ const crearRol = async (req, res) => {
         // Devuelve el estado en la respuesta
         res.status(201).json({ id: result.insertId, rol, descripcion, estado: estadoInicial });
     } catch (error) {
-        console.error("Error al crear rol:", error);
+        ("Error al crear rol:", error);
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'El nombre del rol ya existe.' });
         }
@@ -102,7 +102,7 @@ const obtenerRoles = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error al obtener roles con paginación/búsqueda:", error);
+        ("Error al obtener roles con paginación/búsqueda:", error);
         res.status(500).json({ error: "Error interno del servidor al obtener roles" });
     }
 };
@@ -119,7 +119,7 @@ const obtenerRolPorId = async (req, res) => {
 
         res.json(rol[0]);
     } catch (error) {
-        console.error("Error al obtener rol:", error);
+        ("Error al obtener rol:", error);
         res.status(500).json({ error: "Error interno del servidor" });
     }
 };
@@ -151,7 +151,7 @@ const actualizarRol = async (req, res) => {
 
         res.json({ message: "Rol actualizado correctamente" });
     } catch (error) {
-        console.error("Error al actualizar rol:", error);
+        ("Error al actualizar rol:", error);
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'El nombre del rol ya existe.' });
         }
@@ -191,7 +191,7 @@ const eliminarRol = async (req, res) => {
         res.json({ message: "Rol eliminado correctamente." });
 
     } catch (error) {
-        console.error("Error al eliminar rol:", error);
+        ("Error al eliminar rol:", error);
         // Si tienes FOREIGN KEY CONSTRAINTS en tu DB, MySQL ya te daría un error
         // pero esta lógica es más explícita y devuelve un mensaje más amigable.
         // El 'ER_ROW_IS_REFERENCED' que tienes comentado ya es una forma de esto,
@@ -223,7 +223,7 @@ const obtenerPermisosPorRol = async (req, res) => {
         const permisosAsignadosIds = results.map(row => row.id_permiso);
         res.json(permisosAsignadosIds);
     } catch (err) {
-        console.error('Error al obtener permisos por rol:', err);
+        ('Error al obtener permisos por rol:', err);
         res.status(500).json({ error: 'Error al obtener permisos asignados al rol' });
     }
 };
@@ -275,10 +275,10 @@ const asignarPermisosARol = async (req, res) => {
             try {
                 await connection.rollback(); 
             } catch (rollbackError) {
-                console.error("Error al intentar deshacer la transacción:", rollbackError);
+                ("Error al intentar deshacer la transacción:", rollbackError);
             }
         }
-        console.error('Error al asignar permisos al rol:', err);
+        ('Error al asignar permisos al rol:', err);
         res.status(500).json({ error: 'Error al asignar permisos al rol.', details: err.message }); // Añade detalles para depuración
     } finally {
         // 7. Es crucial liberar la conexión de vuelta al pool en el bloque finally

@@ -33,7 +33,7 @@ exports.obtenerProductos = async (req, res) => {
 
         res.json(productos);
     } catch (error) {
-        console.error('Error al obtener los productos:', error);
+        ('Error al obtener los productos:', error);
         res.status(500).json({ error: 'Error al obtener los productos' });
     }
 };
@@ -60,7 +60,7 @@ exports.obtenerProducto = async (req, res) => {
 
         res.json(productoData);
     } catch (error) {
-        console.error('Error al obtener el producto:', error);
+        ('Error al obtener el producto:', error);
         res.status(500).json({ error: 'Error al obtener el producto con tallas y colores' });
     }
 };
@@ -124,7 +124,7 @@ exports.crearProducto = async (req, res) => {
 
     } catch (error) {
         await db.query('ROLLBACK'); // Revertir la transacción en caso de error
-        console.error('Error al crear el producto:', error);
+        ('Error al crear el producto:', error);
         // Manejo de errores específicos si es necesario, ej. duplicado
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'Ya existe una combinación de producto, talla y color. Si deseas actualizarla, usa la función de actualizar.' });
@@ -201,7 +201,7 @@ exports.actualizarProducto = async (req, res) => {
 
     } catch (error) {
         await db.query('ROLLBACK'); // Revertir la transacción en caso de error
-        console.error('Error al actualizar el producto:', error);
+        ('Error al actualizar el producto:', error);
         // Puedes agregar manejo de errores específicos aquí si es necesario
         res.status(500).json({ error: 'Error al actualizar el producto' });
     }
@@ -222,7 +222,7 @@ exports.eliminarProducto = async (req, res) => {
 
         res.json({ mensaje: 'Producto eliminado correctamente' });
     } catch (error) {
-        console.error('Error al eliminar el producto:', error);
+        ('Error al eliminar el producto:', error);
         res.status(500).json({ error: 'Error al eliminar el producto' });
     }
 };
@@ -262,7 +262,7 @@ exports.agregarVarianteProducto = async (req, res) => {
         res.status(201).json({ mensaje: 'Variante de producto agregada correctamente.' });
 
     } catch (error) {
-        console.error('Error al agregar variante de producto:', error);
+        ('Error al agregar variante de producto:', error);
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'Esta combinación de talla y color ya existe para este producto.' });
         }
@@ -310,7 +310,7 @@ exports.actualizarVarianteProducto = async (req, res) => {
 
     } catch (error) {
         await db.query('ROLLBACK');
-        console.error('Error al actualizar variante de producto:', error);
+        ('Error al actualizar variante de producto:', error);
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ error: 'La nueva combinación de talla y color ya existe para este producto.' });
         }
@@ -334,7 +334,7 @@ exports.eliminarVarianteProducto = async (req, res) => {
 
         res.json({ mensaje: 'Variante de producto eliminada correctamente.' });
     } catch (error) {
-        console.error('Error al eliminar variante de producto:', error);
+        ('Error al eliminar variante de producto:', error);
         res.status(500).json({ error: 'Error al eliminar variante de producto.' });
     }
 };

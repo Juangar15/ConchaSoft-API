@@ -12,7 +12,7 @@ exports.obtenerProveedores = async (req, res) => {
         const [proveedores] = await db.query('SELECT * FROM proveedor');
         res.json(proveedores);
     } catch (error) {
-        console.error('Error al obtener los proveedores:', error); // Log del error para depuración
+        ('Error al obtener los proveedores:', error); // Log del error para depuración
         res.status(500).json({ error: 'Error interno del servidor al obtener los proveedores.' });
     }
 };
@@ -33,7 +33,7 @@ exports.obtenerProveedor = async (req, res) => {
         }
         res.json(proveedor[0]);
     } catch (error) {
-        console.error(`Error al obtener el proveedor con ID ${req.params.id}:`, error);
+        (`Error al obtener el proveedor con ID ${req.params.id}:`, error);
         res.status(500).json({ error: 'Error interno del servidor al obtener el proveedor.' });
     }
 };
@@ -133,7 +133,7 @@ exports.crearProveedor = async (req, res) => {
             }
             return res.status(409).json({ error: errorMessage }); // 409 Conflict
         }
-        console.error('Error al crear el proveedor:', error);
+        ('Error al crear el proveedor:', error);
         res.status(500).json({ error: 'Error interno del servidor al crear el proveedor.' });
     }
 };
@@ -214,7 +214,7 @@ exports.actualizarProveedor = async (req, res) => {
         }
         res.json({ mensaje: 'Proveedor actualizado correctamente.' });
     } catch (error) {
-        console.error(`Error al actualizar el proveedor con ID ${req.params.id}:`, error);
+        (`Error al actualizar el proveedor con ID ${req.params.id}:`, error);
         res.status(500).json({ error: 'Error interno del servidor al actualizar el proveedor.' });
     }
 };
@@ -235,7 +235,7 @@ exports.eliminarProveedor = async (req, res) => {
         }
         res.json({ mensaje: 'Proveedor eliminado correctamente.' });
     } catch (error) {
-        console.error(`Error al eliminar el proveedor con ID ${req.params.id}:`, error);
+        (`Error al eliminar el proveedor con ID ${req.params.id}:`, error);
         res.status(500).json({ error: 'Error interno del servidor al eliminar el proveedor.' });
     }
 };

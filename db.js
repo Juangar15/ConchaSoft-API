@@ -5,6 +5,6 @@ const db = mysql.createPool(process.env.DATABASE_URL);
 
 db.getConnection()
     .then(() => console.log('Conectado a la base de datos'))
-    .catch(err => console.error('Error de conexión:', err));
+    .catch(err => ('Error de conexión:', err));
 
 module.exports = db;
