@@ -170,12 +170,14 @@ exports.crearCompraCompleta = async (req, res) => {
 // compController.js (adición para actualizar una compra completa)
 
 exports.actualizarCompraCompleta = async (req, res) => {
-    const connection = await db.getConnection();
+    const connection = await db.getConnection(); // Obtener una conexión del pool para transacciones
     try {
-        await connection.beginTransaction();
+        await connection.beginTransaction(); // Iniciar la transacción
 
         const { id: id_compra_a_actualizar } = req.params;
-        const { fecha, tipo_pago, estado, id_proveedor, productosComprados } = req.body; // 'estado' es clave aquí
+        // Se reciben todos los campos que pueden ser actualizados, incluido 'estado'
+        // 'productosComprados' solo se procesará si la compra no está siendo anulada.
+        const { fecha, tipo_pago, estado, id_proveedor, productosComprados } = req.body;
 
         // 1. Validar que la compra exista y obtener su estado actual
         const [compraExistente] = await connection.query('SELECT * FROM compra WHERE id = ?', [id_compra_a_actualizar]);
@@ -183,71 +185,76 @@ exports.actualizarCompraCompleta = async (req, res) => {
             await connection.rollback();
             return res.status(404).json({ error: 'Compra no encontrada para actualizar.' });
         }
-        const estadoActualCompra = compraExistente[0].estado;
+        const estadoActualCompra = compraExistente[0].estado; // Estado actual de la compra en la DB
 
-        // Validar el nuevo estado (solo permitir 0 o 1)
+        // Validar que el 'estado' sea 0 o 1 si se proporciona
         if (estado !== undefined && (estado !== 0 && estado !== 1)) {
             await connection.rollback();
             return res.status(400).json({ error: 'El estado de la compra debe ser 0 (Anulada) o 1 (Completada).' });
         }
 
-        // --- Lógica para Anular la Compra y Revertir Stock ---
-        if (estado === 0 && estadoActualCompra === 1) { // Si el nuevo estado es 'Anulada' y el estado actual era 'Completada'
+        // --- Lógica de Manejo de Estado (Anular / Prevenir Des-anulación) ---
+
+        // Caso: Intentar Anular una compra (de Completada a Anulada)
+        if (estado === 0 && estadoActualCompra === 1) {
+            // Si el nuevo estado es 'Anulada' (0) y el estado actual era 'Completada' (1)
+            // Proceder a revertir el stock de todos los ítems de esta compra.
             const [itemsToRevert] = await connection.query(
                 `SELECT id_producto_talla, cantidad FROM compra_prod WHERE id_compra = ?`,
                 [id_compra_a_actualizar]
             );
 
             for (const item of itemsToRevert) {
-                // Restar la cantidad comprada del stock de producto_talla
+                // Restar la cantidad comprada del stock en producto_talla
+                // Usamos `id` porque es la PK de `producto_talla`
                 await connection.query(
                     `UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?`,
                     [item.cantidad, item.id_producto_talla]
                 );
             }
-            // Después de revertir, no permitimos cambiar los productos comprados si la compra se anula
-            // Si intentan enviar productosComprados en este caso, se ignorarán o se podría lanzar un error 400
-            if (productosComprados && productosComprados.length > 0) {
-                 console.warn('Se intentó actualizar productos de una compra anulada. Se ignorarán los cambios en los productos.');
-                 // return res.status(400).json({ error: 'No se pueden modificar los productos de una compra anulada.' });
-            }
+            // Importante: Si se anula la compra, ignoramos cualquier cambio en 'productosComprados'
+            // ya que la compra ya no es "activa" para modificaciones de ítems.
+            // El total de la compra también se recalculará a 0 si la lógica lo requiere, o se mantendrá el original y se actualizará el estado
+            // Por ahora, solo actualizaremos el estado y otros campos de cabecera.
+            console.log(`Compra ${id_compra_a_actualizar} anulada y stock revertido.`);
 
         } else if (estado === 1 && estadoActualCompra === 0) {
-            // Caso: Quieren "des-anular" una compra.
-            // Esto es más complejo: ¿cómo se maneja el stock que fue devuelto?
-            // Si la regla es que una vez anulada, NO se puede volver a completar, deberíamos impedirlo.
+            // Caso: Intentar "des-anular" una compra (de Anulada a Completada)
+            // Según la regla de negocio, esto no está permitido.
             await connection.rollback();
-            return res.status(400).json({ error: 'Una compra anulada no puede ser cambiada a estado "Completada" directamente. Debe crearse una nueva compra si el inventario se reingresa.' });
-            // Si por algún requisito esto fuera permitido, necesitarías añadir de nuevo el stock
-            // y posiblemente revalidar la existencia de las variantes de producto.
+            return res.status(400).json({ error: 'Una compra anulada no puede ser cambiada a estado "Completada". Debe crearse una nueva compra si el inventario se reingresa.' });
         }
 
-        // --- Lógica existente para actualizar ítems de compra (SOLO si no se está anulando o si el estado se mantiene "Completada") ---
-        let totalGeneralCompra = compraExistente[0].total; // Mantener el total actual si no hay cambios en ítems
-        if (estadoActualCompra === 1 && estado !== 0) { // Solo permite cambios de ítems si la compra NO está siendo anulada y NO se anulará
-            // Lógica existente para comparar currentItems y newItems
-            // (Copiar y pegar la lógica de comparación y actualización de ítems de la versión anterior de actualizarCompraCompleta)
-            // ... (Inicio de la lógica para actualizar ítems) ...
-            
-            const [currentItems] = await connection.query(
-                `SELECT id, id_producto_talla, cantidad, precio_unitario, subtotal FROM compra_prod WHERE id_compra = ?`,
-                [id_compra_a_actualizar]
-            );
-            const currentItemsMap = new Map();
-            currentItems.forEach(item => {
-                currentItemsMap.set(item.id_producto_talla, item);
-            });
+        // --- Lógica para Actualización de Ítems (solo si la compra está activa/completada y NO se está anulando) ---
+        let totalGeneralCompra = compraExistente[0].total; // Inicializa con el total actual
 
-            const newItemsMap = new Map();
+        // Solo se procesan los productosComprados si la compra no está siendo anulada
+        // y si el estado actual es 'Completada' (1).
+        // Si el 'estado' se cambió a 0 (anulada), los productosComprados no se tocan.
+        if (estadoActualCompra === 1 && (estado === undefined || estado === 1)) {
+            // Si hay un array de productosComprados, procesar los cambios en los ítems
             if (Array.isArray(productosComprados)) {
+                // Obtener los ítems actuales de la compra para comparación
+                const [currentItems] = await connection.query(
+                    `SELECT id, id_compra, id_producto_talla, cantidad, precio_unitario, subtotal FROM compra_prod WHERE id_compra = ?`,
+                    [id_compra_a_actualizar]
+                );
+                const currentItemsMap = new Map();
+                currentItems.forEach(item => {
+                    currentItemsMap.set(item.id_producto_talla, item);
+                });
+
+                const newItemsMap = new Map();
+                // Preparar los nuevos ítems y validar IDs de producto_talla
                 for (const item of productosComprados) {
-                     const { id_producto, id_talla, color, cantidad, precio_unitario } = item;
+                    const { id_producto, id_talla, color, cantidad, precio_unitario } = item;
 
                     if (id_producto === undefined || id_talla === undefined || !color || cantidad === undefined || precio_unitario === undefined) {
                         await connection.rollback();
                         return res.status(400).json({ error: 'Cada ítem de compra debe tener id_producto, id_talla, color, cantidad y precio_unitario.' });
                     }
 
+                    // Buscar el ID de producto_talla basado en producto, talla y color
                     const [productoTallaExistente] = await connection.query(
                         `SELECT id FROM producto_talla WHERE id_producto = ? AND id_talla = ? AND color = ?`,
                         [id_producto, id_talla, color]
@@ -260,86 +267,96 @@ exports.actualizarCompraCompleta = async (req, res) => {
                     const id_producto_talla = productoTallaExistente[0].id;
                     newItemsMap.set(id_producto_talla, { ...item, id_producto_talla });
                 }
-            }
-            
-            totalGeneralCompra = 0; // Reiniciar total para recalcularlo
 
-            // 3. Procesar ítems: eliminaciones, actualizaciones y adiciones
-            // A. Ítems eliminados (están en currentItems pero no en newItems)
-            for (const [id_pt, currentItem] of currentItemsMap.entries()) {
-                if (!newItemsMap.has(id_pt)) {
-                    // Restaurar stock
-                    await connection.query(
-                        `UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?`,
-                        [currentItem.cantidad, currentItem.id_producto_talla]
-                    );
-                    // Eliminar de compra_prod
-                    await connection.query(
-                        `DELETE FROM compra_prod WHERE id = ?`,
-                        [currentItem.id] // Usar el ID de la fila de compra_prod para eliminar
-                    );
-                }
-            }
+                totalGeneralCompra = 0; // Reiniciar total para recalcularlo basado en los nuevos/actualizados ítems
 
-            // B. Ítems nuevos o actualizados
-            for (const [id_pt, newItem] of newItemsMap.entries()) {
-                const currentItem = currentItemsMap.get(id_pt);
-
-                const subtotalItem = newItem.cantidad * newItem.precio_unitario;
-                totalGeneralCompra += subtotalItem; // Sumar para el nuevo total
-
-                if (currentItem) {
-                    // Ítem existente, actualizar si cambió la cantidad o precio_unitario
-                    if (currentItem.cantidad !== newItem.cantidad || currentItem.precio_unitario !== newItem.precio_unitario) {
-                        const stockDiff = newItem.cantidad - currentItem.cantidad;
+                // Procesar ítems: eliminaciones, actualizaciones y adiciones
+                // A. Ítems eliminados (están en currentItems pero no en newItemsMap)
+                for (const [id_pt, currentItem] of currentItemsMap.entries()) {
+                    if (!newItemsMap.has(id_pt)) {
+                        // Restar la cantidad del stock (porque se "des-compra")
                         await connection.query(
-                            `UPDATE producto_talla SET cantidad = cantidad + ? WHERE id = ?`,
-                            [stockDiff, newItem.id_producto_talla]
+                            `UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?`,
+                            [currentItem.cantidad, currentItem.id_producto_talla]
                         );
+                        // Eliminar de la tabla compra_prod
                         await connection.query(
-                            `UPDATE compra_prod SET cantidad = ?, precio_unitario = ?, subtotal = ? WHERE id_compra = ? AND id_producto_talla = ?`,
-                            [newItem.cantidad, newItem.precio_unitario, subtotalItem, id_compra_a_actualizar, newItem.id_producto_talla]
+                            `DELETE FROM compra_prod WHERE id = ?`,
+                            [currentItem.id] // Usar el ID de la fila de compra_prod para eliminar
                         );
                     }
-                } else {
-                    // Ítem nuevo, insertar y agregar stock
-                    await connection.query(
-                        `INSERT INTO compra_prod (id_compra, id_producto_talla, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)`,
-                        [id_compra_a_actualizar, newItem.id_producto_talla, newItem.cantidad, newItem.precio_unitario, subtotalItem]
-                    );
-                    await connection.query(
-                        `UPDATE producto_talla SET cantidad = cantidad + ? WHERE id = ?`,
-                        [newItem.cantidad, newItem.id_producto_talla]
-                    );
+                }
+
+                // B. Ítems nuevos o actualizados (están en newItemsMap)
+                for (const [id_pt, newItem] of newItemsMap.entries()) {
+                    const currentItem = currentItemsMap.get(id_pt);
+
+                    const subtotalItem = newItem.cantidad * newItem.precio_unitario;
+                    totalGeneralCompra += subtotalItem; // Acumular para el nuevo total
+
+                    if (currentItem) {
+                        // Ítem existente: Actualizar si cambió la cantidad o precio_unitario
+                        if (currentItem.cantidad !== newItem.cantidad || currentItem.precio_unitario !== newItem.precio_unitario) {
+                            const stockDiff = newItem.cantidad - currentItem.cantidad; // Diferencia para ajustar stock
+                            await connection.query(
+                                `UPDATE producto_talla SET cantidad = cantidad + ? WHERE id = ?`,
+                                [stockDiff, newItem.id_producto_talla]
+                            );
+                            await connection.query(
+                                `UPDATE compra_prod SET cantidad = ?, precio_unitario = ?, subtotal = ? WHERE id_compra = ? AND id_producto_talla = ?`,
+                                [newItem.cantidad, newItem.precio_unitario, subtotalItem, id_compra_a_actualizar, newItem.id_producto_talla]
+                            );
+                        }
+                    } else {
+                        // Ítem nuevo: Insertar en compra_prod y agregar stock
+                        await connection.query(
+                            `INSERT INTO compra_prod (id_compra, id_producto_talla, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)`,
+                            [id_compra_a_actualizar, newItem.id_producto_talla, newItem.cantidad, newItem.precio_unitario, subtotalItem]
+                        );
+                        await connection.query(
+                            `UPDATE producto_talla SET cantidad = cantidad + ? WHERE id = ?`,
+                            [newItem.cantidad, newItem.id_producto_talla]
+                        );
+                    }
                 }
             }
-            // ... (Fin de la lógica para actualizar ítems) ...
         }
 
-
-        // 4. Actualizar la cabecera de la compra (incluyendo el nuevo total y estado)
-        const updateFields = { total: totalGeneralCompra };
-        if (fecha !== undefined) updateFields.fecha = fecha; // Permite que la fecha sea opcional si no se cambia
+        // 4. Actualizar la cabecera de la compra
+        const updateFields = {};
+        // Solo incluir en la actualización los campos que se proporcionaron y son válidos
+        if (fecha !== undefined) updateFields.fecha = fecha;
         if (tipo_pago !== undefined) updateFields.tipo_pago = tipo_pago;
         if (id_proveedor !== undefined) updateFields.id_proveedor = id_proveedor;
-        if (estado !== undefined) updateFields.estado = estado; // ¡Importante actualizar el estado!
+        if (estado !== undefined) updateFields.estado = estado; // El estado siempre se actualiza si se envía
 
-        const updateQueryParts = Object.keys(updateFields).map(key => `${key} = ?`);
-        const updateValues = Object.values(updateFields);
+        // Si se procesaron productos (o se anuló), el totalGeneralCompra ya tiene el valor correcto
+        // Si no se procesaron productos y no se anuló, el total queda el de la BD, o se actualiza si hay cambios en otros campos
+        // Siempre se debe actualizar el total después de cualquier modificación de ítems
+        updateFields.total = totalGeneralCompra;
+
+
+        const queryParts = Object.keys(updateFields).map(key => `${key} = ?`);
+        const values = Object.values(updateFields);
+
+        if (queryParts.length === 0) {
+            await connection.rollback();
+            return res.status(400).json({ error: 'No se proporcionaron campos válidos para actualizar.' });
+        }
 
         await connection.query(
-            `UPDATE compra SET ${updateQueryParts.join(', ')} WHERE id = ?`,
-            [...updateValues, id_compra_a_actualizar]
+            `UPDATE compra SET ${queryParts.join(', ')} WHERE id = ?`,
+            [...values, id_compra_a_actualizar]
         );
 
-        await connection.commit();
+        await connection.commit(); // Confirmar la transacción
         res.json({ mensaje: 'Compra actualizada correctamente y stock ajustado.' });
 
     } catch (error) {
-        await connection.rollback();
+        await connection.rollback(); // Revertir la transacción en caso de error
         console.error('Error al actualizar la compra completa:', error);
         res.status(500).json({ error: 'Error al actualizar la compra completa y ajustar stock.' });
     } finally {
-        if (connection) connection.release();
+        if (connection) connection.release(); // Liberar la conexión al pool
     }
 };
