@@ -32,8 +32,7 @@ app.use(express.json());
 // IMPORTANTE: Coloca esto ANTES de definir tus rutas
 app.use(cors({
   origin: [
-    'http://localhost:5173', // Para tu desarrollo local
-    'https://tu-frontend-desplegado.onrender.com' // REEMPLAZA con la URL REAL de tu frontend cuando lo despliegues en Render u otro servicio.
+    '*' // REEMPLAZA con la URL REAL de tu frontend cuando lo despliegues en Render u otro servicio.
                                                  // Por ejemplo: 'https://conchasoft-frontend.onrender.com'
   ],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', // Permite estos métodos HTTP
