@@ -64,7 +64,7 @@ exports.obtenerCompra = async (req, res) => {
                 cp.id AS id_compra_prod_item, cp.cantidad, cp.precio_unitario, cp.subtotal,
                 prod.id AS id_producto, prod.nombre AS nombre_producto, prod.valor AS valor_unitario_actual_producto,
                 t.id_talla, t.talla AS nombre_talla,
-                pt.color, pt.id AS id_producto_talla // Incluir id_producto_talla para referencia
+                pt.color, pt.id AS id_producto_talla 
             FROM compra_prod cp
             INNER JOIN producto_talla pt ON cp.id_producto_talla = pt.id
             INNER JOIN producto prod ON pt.id_producto = prod.id
