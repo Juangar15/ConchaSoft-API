@@ -61,7 +61,7 @@ exports.obtenerCompra = async (req, res) => {
         // Obtener los detalles de los productos de la compra
         const [items] = await db.query(`
             SELECT 
-                cp.id AS id_compra_prod_item, cp.cantidad, cp.precio_unitario, cp.subtotal,
+                cp.id_compra AS id_compra_prod_item, cp.cantidad, cp.precio_unitario, cp.subtotal,
                 prod.id AS id_producto, prod.nombre AS nombre_producto, prod.valor AS valor_unitario_actual_producto,
                 t.id_talla, t.talla AS nombre_talla,
                 pt.color, pt.id AS id_producto_talla 
