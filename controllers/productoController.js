@@ -4,6 +4,7 @@ const db = require('../db');
 const obtenerTallasYColoresProducto = async (id_producto) => {
     const [tallasYColores] = await db.query(`
         SELECT
+            producto_talla.id AS id_producto_talla,
             talla.id_talla,
             talla.talla AS nombre_talla,
             producto_talla.color,
