@@ -4,6 +4,7 @@ const proveedorController = require('../controllers/proveedorController');
 const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware');
 
 router.get('/', verificarToken, verificarPermiso('ver_proveedores'), proveedorController.obtenerProveedores);
+router.get('/activos', verificarToken, verificarPermiso('ver_proveedores'), proveedorController.obtenerProveedoresActivos);
 router.get('/:id', verificarToken, verificarPermiso('ver_proveedores'), proveedorController.obtenerProveedor);
 router.post('/', verificarToken, verificarPermiso('crear_proveedores'), proveedorController.crearProveedor);
 router.put('/:id', verificarToken, verificarPermiso('editar_proveedores'), proveedorController.actualizarProveedor);

@@ -6,6 +6,24 @@ const db = require('../db');
  * @param {Object} req - Objeto de solicitud de Express.
  * @param {Object} res - Objeto de respuesta de Express.
  */
+
+// Obtiene todos los proveedores activos para usarlos en formularios (ej. en Compras)
+exports.obtenerProveedoresActivos = async (req, res) => {
+    try {
+        const [proveedoresActivos] = await db.query(`
+            SELECT id, nombre_comercial, razon_social 
+            FROM proveedor 
+            WHERE estado = 1 
+            ORDER BY nombre_comercial
+        `);
+        res.json(proveedoresActivos);
+    } catch (error) {
+        console.error('Error al obtener los proveedores activos:', error);
+        res.status(500).json({ error: 'Error al obtener los proveedores activos' });
+    }
+};
+
+
 exports.obtenerProveedores = async (req, res) => {
     try {
         // Consulta todos los campos de la tabla proveedor
