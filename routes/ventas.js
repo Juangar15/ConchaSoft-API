@@ -9,6 +9,6 @@ router.get('/:id', verificarToken, verificarPermiso('ver_ventas'), ventaControll
 router.post('/', verificarToken, verificarPermiso('crear_venta'), ventaController.crearVenta);
 router.put('/:id', verificarToken, verificarPermiso('editar_venta'), ventaController.actualizarVenta);
 router.put('/:id/anular', verificarToken, verificarPermiso('editar_venta'), ventaController.anularVenta);
-router.delete('/:id', verificarToken, verificarPermiso('eliminar_venta'), ventaController.eliminarVenta);
+
 
 module.exports = router;

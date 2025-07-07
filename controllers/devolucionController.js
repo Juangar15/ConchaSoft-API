@@ -1,185 +1,139 @@
+// controllers/devolucionController.js
+
 const db = require('../db');
 
-// Obtener todas las devoluciones
 exports.obtenerDevoluciones = async (req, res) => {
     try {
-        const [devoluciones] = await db.query('SELECT * FROM devolucion');
+        const [devoluciones] = await db.query('SELECT d.*, c.nombre, c.apellido FROM devolucion d JOIN cliente c ON d.id_cliente = c.id ORDER BY d.fecha DESC, d.id DESC');
         res.json(devoluciones);
     } catch (error) {
+        console.error('Error al obtener las devoluciones:', error);
         res.status(500).json({ error: 'Error al obtener las devoluciones' });
     }
 };
 
-// Obtener una devolución por ID
+// --- FUNCIÓN RE-INCORPORADA: OBTENER DEVOLUCIÓN POR ID ---
+// Esencial para ver los detalles de una devolución específica.
 exports.obtenerDevolucion = async (req, res) => {
     try {
         const { id } = req.params;
         const [devolucion] = await db.query('SELECT * FROM devolucion WHERE id = ?', [id]);
+
         if (devolucion.length === 0) {
             return res.status(404).json({ error: 'Devolución no encontrada' });
         }
-        res.json(devolucion[0]);
+
+        // Se obtienen también los productos específicos de esa devolución
+        const [productosDevueltos] = await db.query(`
+            SELECT dp.cantidad, dp.precio_unitario_devuelto, dp.subtotal_devuelto, p.nombre AS nombre_producto, t.talla AS nombre_talla
+            FROM devolucion_prod dp
+            JOIN producto_talla pt ON dp.id_producto_talla = pt.id
+            JOIN producto p ON pt.id_producto = p.id
+            JOIN talla t ON pt.id_talla = t.id_talla
+            WHERE dp.id_devolucion = ?`, [id]);
+            
+        res.json({ ...devolucion[0], productosDevueltos });
+
     } catch (error) {
+        console.error('Error al obtener la devolución:', error);
         res.status(500).json({ error: 'Error al obtener la devolución' });
     }
 };
 
-// Crear una devolución
-// Crear una devolución (ahora actualiza el saldo total del cliente)
+// --- Lógica de creación y anulación (ya corregida) ---
+
 exports.crearDevolucion = async (req, res) => {
-        const connection = await db.getConnection(); // Obtener conexión para la transacción
-        try {
-            await connection.beginTransaction(); // Iniciar transacción
-    
-            const { id_venta, id_cliente, fecha, razon, saldo_a_favor } = req.body;
-    
-            // Validaciones iniciales
-            if (!id_venta || !id_cliente || !fecha || !razon) {
-                await connection.rollback(); // Revertir si falla validación
-                return res.status(400).json({ error: 'Faltan campos obligatorios' });
-            }
-    
-            // Asegurarse de que saldo_a_favor es un número
-            const montoDevolucionSaldo = parseFloat(saldo_a_favor) || 0;
-    
-            // Insertar la devolución en la tabla devolucion
-            const [devolucionResult] = await connection.execute( // Usar execute en conexión de transacción
-                'INSERT INTO devolucion (id_venta, id_cliente, fecha, razon, saldo_a_favor) VALUES (?, ?, ?, ?, ?)',
-                [id_venta, id_cliente, fecha, razon, montoDevolucionSaldo]
-            );
-            const idDevolucionCreada = devolucionResult.insertId;
-            console.log(`Backend crearDevolucion: Devolución ${idDevolucionCreada} insertada para cliente ${id_cliente}.`); // Log inserción
-    
-            // --- NUEVO: Sumar el saldo de la devolución al saldo total del cliente ---
-            if (montoDevolucionSaldo > 0) { // Solo actualizamos si la devolución otorga saldo
-                 await connection.execute( // Usar execute en conexión de transacción
-                     'UPDATE cliente SET saldo_a_favor = saldo_a_favor + ? WHERE id = ?',
-                     [montoDevolucionSaldo, id_cliente]
-                 );
-                 console.log(`Backend crearDevolucion: Saldo total del cliente ${id_cliente} actualizado, sumando ${montoDevolucionSaldo} (devolución).`); // Log actualización saldo cliente
-            }
-            // --- FIN NUEVO ---
-    
-    
-            await connection.commit(); // Confirmar transacción
-    
-            res.status(201).json({ mensaje: 'Devolución creada correctamente', id_devolucion: idDevolucionCreada });
-    
-        } catch (error) {
-            await connection.rollback(); // Revertir transacción si falla
-            ('Error al crear la devolución:', error);
-            res.status(500).json({ error: 'Error al crear la devolución' });
-    
-        } finally {
-            if (connection) connection.release(); // Liberar conexión
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const { id_venta, razon, productos_devueltos } = req.body;
+
+        const [venta] = await connection.execute('SELECT id_cliente, estado FROM venta WHERE id = ? FOR UPDATE', [id_venta]);
+        if (venta.length === 0) throw new Error('La venta original no existe.');
+        if (venta[0].estado === 'Anulado' || venta[0].estado === 'Devuelto Totalmente') {
+            throw new Error(`La venta ya está en estado '${venta[0].estado}' y no admite más devoluciones.`);
         }
-    };
+        const id_cliente = venta[0].id_cliente;
 
-// Actualizar una devolución
-// exports.actualizarDevolucion = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const { id_venta, id_cliente, fecha, razon, saldo_a_favor } = req.body;
-//         const [result] = await db.query(
-//             'UPDATE devolucion SET id_venta = ?, id_cliente = ?, fecha = ?, razon = ?, saldo_a_favor = ? WHERE id = ?',
-//             [id_venta, id_cliente, fecha, razon, saldo_a_favor || 0, id]
-//         );
+        let montoTotalDevuelto = 0;
+        for (const prod of productos_devueltos) {
+            const [ventaProd] = await connection.execute('SELECT precio_unitario FROM venta_prod WHERE id_venta = ? AND id_producto_talla = ?', [id_venta, prod.id_producto_talla]);
+            if (ventaProd.length === 0) throw new Error(`El producto con id_producto_talla ${prod.id_producto_talla} no pertenece a la venta original.`);
+            montoTotalDevuelto += prod.cantidad * ventaProd[0].precio_unitario;
+        }
 
-//         if (result.affectedRows === 0) {
-//             return res.status(404).json({ error: 'Devolución no encontrada' });
-//         }
-//         res.json({ mensaje: 'Devolución actualizada correctamente' });
-//     } catch (error) {
-//         res.status(500).json({ error: 'Error al actualizar la devolución' });
-//     }
-// };
+        const [devResult] = await connection.execute('INSERT INTO devolucion (id_venta, id_cliente, fecha, razon, estado, monto_total_devuelto) VALUES (?, ?, CURDATE(), ?, ?, ?)', [id_venta, id_cliente, razon, 'Aceptada', montoTotalDevuelto]);
+        const id_devolucion = devResult.insertId;
 
-// Eliminar una devolución
-// exports.eliminarDevolucion = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const [result] = await db.query('DELETE FROM devolucion WHERE id = ?', [id]);
+        for (const prod of productos_devueltos) {
+            const [ventaProd] = await connection.execute('SELECT precio_unitario FROM venta_prod WHERE id_venta = ? AND id_producto_talla = ?', [id_venta, prod.id_producto_talla]);
+            const precio_unitario_devuelto = ventaProd[0].precio_unitario;
+            await connection.execute('INSERT INTO devolucion_prod (id_devolucion, id_producto_talla, cantidad, precio_unitario_devuelto, subtotal_devuelto) VALUES (?, ?, ?, ?, ?)', [id_devolucion, prod.id_producto_talla, prod.cantidad, precio_unitario_devuelto, prod.cantidad * precio_unitario_devuelto]);
+            await connection.execute('UPDATE producto_talla SET cantidad = cantidad + ? WHERE id = ?', [prod.cantidad, prod.id_producto_talla]);
+        }
 
-//         if (result.affectedRows === 0) {
-//             return res.status(404).json({ error: 'Devolución no encontrada' });
-//         }
-//         res.json({ mensaje: 'Devolución eliminada correctamente' });
-//     } catch (error) {
-//         res.status(500).json({ error: 'Error al eliminar la devolución' });
-//     }
-// };
+        if (montoTotalDevuelto > 0) {
+            await connection.execute('INSERT INTO movimiento_saldo_cliente (id_cliente, tipo_movimiento, monto, descripcion, referencia_entidad, id_entidad_origen) VALUES (?, ?, ?, ?, ?, ?)', [id_cliente, 'credito', montoTotalDevuelto, `Crédito por devolución de venta #${id_venta}`, 'devolucion', id_devolucion]);
+        }
 
-// Anular una devolución (marca como Anulada y resta su saldo del cliente)
+        const [productosComprados] = await connection.execute('SELECT SUM(cantidad) AS total FROM venta_prod WHERE id_venta = ?', [id_venta]);
+        const [productosDevueltos] = await connection.execute(`SELECT SUM(dp.cantidad) AS total FROM devolucion_prod dp JOIN devolucion d ON dp.id_devolucion = d.id WHERE d.id_venta = ? AND d.estado = 'Aceptada'`, [id_venta]);
+        let nuevoEstadoVenta = (productosDevueltos[0].total >= productosComprados[0].total) ? 'Devuelto Totalmente' : 'Devuelto Parcialmente';
+        await connection.execute("UPDATE venta SET estado = ? WHERE id = ?", [nuevoEstadoVenta, id_venta]);
+        
+        await connection.commit();
+        res.status(201).json({ mensaje: 'Devolución procesada correctamente.', id_devolucion });
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error('Error al crear la devolución:', error);
+        res.status(500).json({ error: error.message || 'Error interno al procesar la devolución.' });
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
 exports.anularDevolucion = async (req, res) => {
-        const connection = await db.getConnection(); // Obtener conexión para la transacción
-        try {
-            await connection.beginTransaction(); // Iniciar transacción
-    
-            const { id } = req.params;
-    
-            // 1. Obtener los detalles de la devolución ANTES de modificarla para saber el cliente y el saldo que otorgó
-            // y verificar su estado actual
-            const [devolucionToAnular] = await connection.execute(
-                'SELECT id_cliente, saldo_a_favor, estado FROM devolucion WHERE id = ?',
-                [id]
-            );
-    
-            if (devolucionToAnular.length === 0) {
-                await connection.rollback();
-                return res.status(404).json({ error: 'Devolución no encontrada para anular' });
-            }
-    
-            const { id_cliente: clienteId, saldo_a_favor: montoOriginalDevolucion, estado: estadoActual } = devolucionToAnular[0];
-            console.log(`Backend anularDevolucion: Anulando devolución ${id}. Cliente ID: ${clienteId}, Saldo original: ${montoOriginalDevolucion}, Estado actual: ${estadoActual}`); // Log inicial
-    
-    
-            if (estadoActual === 'Anulada') {
-                await connection.rollback();
-                return res.status(400).json({ error: 'Esta devolución ya está anulada' });
-            }
-    
-    
-            // 2. Marcar la devolución como 'Anulada' y setear su propio campo saldo_a_favor a 0
-            const [updateResult] = await connection.execute(
-                'UPDATE devolucion SET estado = ?, saldo_a_favor = ? WHERE id = ?',
-                ['Anulada', 0, id] // Marcamos como Anulada y seteamos su saldo a 0 en la tabla devolucion
-            );
-    
-            if (updateResult.affectedRows === 0) {
-                // Esto no debería pasar si la encontramos en el paso 1, pero es una seguridad
-                await connection.rollback();
-                return res.status(500).json({ error: 'Error al actualizar el estado de la devolución.' });
-            }
-            console.log(`Backend anularDevolucion: Devolución ${id} marcada como Anulada.`); // Log actualización estado
-    
-    
-            // 3. Restar el saldo que esta devolución había sumado originalmente del saldo total del cliente
-            // Usamos el montoOriginalDevolucion que leímos antes de setearlo a 0
-            if (montoOriginalDevolucion > 0) { // Solo restamos si la devolución original había otorgado saldo
-                await connection.execute(
-                    'UPDATE cliente SET saldo_a_favor = saldo_a_favor - ? WHERE id = ?',
-                    [montoOriginalDevolucion, clienteId] // Restamos el monto que se había sumado al crear la devolución
-                );
-                console.log(`Backend anularDevolucion: Saldo total del cliente ${clienteId} actualizado, restando ${montoOriginalDevolucion} (devolución anulada).`); // Log actualización saldo cliente
-            } else {
-                 console.log(`Backend anularDevolucion: Devolución ${id} no tenía saldo a favor (${montoOriginalDevolucion}), no se resta del cliente.`);
-            }
-    
-            // Nota: Si las devoluciones involucran restaurar stock, esa lógica iría aquí, similar a anularVenta.
-            // Basado en tu esquema, las devoluciones solo añaden saldo, no restauran stock de ventas,
-            // así que no añadimos esa parte aquí.
-    
-    
-            await connection.commit(); // Confirmar transacción
-    
-            res.json({ mensaje: 'Devolución anulada correctamente' });
-    
-        } catch (error) {
-            await connection.rollback(); // Revertir transacción si falla
-            ('Error al anular la devolución:', error);
-            res.status(500).json({ error: 'Error al anular la devolución' });
-    
-        } finally {
-            if (connection) connection.release(); // Liberar conexión
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const { id } = req.params;
+        const [devolucion] = await connection.execute("SELECT * FROM devolucion WHERE id = ? AND estado = 'Aceptada' FOR UPDATE", [id]);
+        if (devolucion.length === 0) throw new Error('Devolución no encontrada o ya fue anulada.');
+        const { id_venta, id_cliente, monto_total_devuelto } = devolucion[0];
+
+        const [productosDevueltos] = await connection.execute('SELECT id_producto_talla, cantidad FROM devolucion_prod WHERE id_devolucion = ?', [id]);
+        for (const prod of productosDevueltos) {
+            await connection.execute('UPDATE producto_talla SET cantidad = cantidad - ? WHERE id = ?', [prod.cantidad, prod.id_producto_talla]);
         }
-    };
+
+        if (monto_total_devuelto > 0) {
+             await connection.execute('INSERT INTO movimiento_saldo_cliente (id_cliente, tipo_movimiento, monto, descripcion, referencia_entidad, id_entidad_origen) VALUES (?, ?, ?, ?, ?, ?)', [id_cliente, 'debito', monto_total_devuelto, `Reversión por anulación de devolución #${id}`, 'devolucion_anulada', id]);
+        }
+
+        await connection.execute("UPDATE devolucion SET estado = 'Anulada' WHERE id = ?", [id]);
+
+        const [productosComprados] = await connection.execute('SELECT SUM(cantidad) AS total FROM venta_prod WHERE id_venta = ?', [id_venta]);
+        const [productosAunDevueltos] = await connection.execute(`SELECT SUM(dp.cantidad) AS total FROM devolucion_prod dp JOIN devolucion d ON dp.id_devolucion = d.id WHERE d.id_venta = ? AND d.estado = 'Aceptada'`, [id_venta]);
+        const totalDevueltoAhora = productosAunDevueltos[0]?.total || 0;
+        const totalComprado = productosComprados[0].total;
+
+        let nuevoEstadoVenta = 'Completado';
+        if (totalDevueltoAhora >= totalComprado) {
+            nuevoEstadoVenta = 'Devuelto Totalmente';
+        } else if (totalDevueltoAhora > 0) {
+            nuevoEstadoVenta = 'Devuelto Parcialmente';
+        }
+        await connection.execute("UPDATE venta SET estado = ? WHERE id = ?", [nuevoEstadoVenta, id_venta]);
+
+        await connection.commit();
+        res.json({ mensaje: 'Devolución anulada correctamente. El stock y el saldo del cliente han sido revertidos.' });
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error('Error al anular la devolución:', error);
+        res.status(500).json({ error: error.message || 'Error interno al anular la devolución.' });
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+module.exports = exports;

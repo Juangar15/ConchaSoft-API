@@ -5,6 +5,7 @@ const { verificarToken, verificarPermiso } = require('../middleware/authMiddlewa
 
 router.get('/', verificarToken, verificarPermiso('ver_clientes'), clienteController.obtenerClientes);
 router.get('/:id', verificarToken, verificarPermiso('ver_clientes'), clienteController.obtenerCliente);
+router.get('/saldo/:id_cliente', verificarToken, verificarPermiso('ver_clientes'), clienteController.obtenerSaldoCliente);
 router.post('/', verificarToken, verificarPermiso('crear_clientes'), clienteController.crearCliente);
 router.put('/:id', verificarToken, verificarPermiso('editar_clientes'), clienteController.actualizarCliente);
 router.delete('/:id', verificarToken, verificarPermiso('eliminar_clientes'), clienteController.eliminarCliente);
