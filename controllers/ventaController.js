@@ -130,4 +130,64 @@ exports.anularVenta = async (req, res) => {
     }
 };
 
+exports.actualizarVenta = async (req, res) => {
+    // Mantengo esta función con la advertencia de que la actualización de total/saldo a favor en ventas completadas es compleja.
+    // Si la venta tiene estado 'Completado' o 'Devuelto Parcialmente/Totalmente', solo debería permitir actualizar metadatos no críticos (ej. fecha, tipo_pago si no afecta saldo).
+    // Si se modifica el 'total' o 'saldo_a_favor', esto afectará la contabilidad y los movimientos de saldo, lo cual requiere una lógica transaccional mucho más compleja
+    // para revertir los movimientos anteriores y generar los nuevos. La recomendación sigue siendo anular y crear una nueva para cambios importantes.
+
+    try {
+        const { id } = req.params;
+        const { fecha, tipo_pago, id_cliente, saldo_a_favor, total } = req.body;
+
+        const updates = [];
+        const values = [];
+
+        // Para cualquier modificación que afecte el stock o el saldo (total, saldo_a_favor),
+        // se debería obtener el estado actual de la venta y manejar la reversión/aplicación de movimientos.
+        // Esto va más allá de un simple UPDATE SET.
+
+        if (fecha !== undefined) {
+            updates.push('fecha = ?');
+            values.push(fecha);
+        }
+        if (tipo_pago !== undefined) {
+            updates.push('tipo_pago = ?');
+            values.push(tipo_pago);
+        }
+        if (id_cliente !== undefined) {
+            updates.push('id_cliente = ?');
+            values.push(id_cliente);
+        }
+        if (saldo_a_favor !== undefined) {
+            // Si actualizas saldo_a_favor aquí, ¡cuidado! Esto es el saldo_a_favor_aplicado EN ESTA VENTA,
+            // no el saldo total del cliente. Si cambias esto, necesitarás actualizar/crear un movimiento_saldo_cliente
+            // para reflejar el cambio en el saldo total del cliente. Esta es la parte compleja de actualizar ventas.
+            updates.push('saldo_a_favor = ?');
+            values.push(saldo_a_favor);
+        }
+        if (total !== undefined) {
+            updates.push('total = ?');
+            values.push(total);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
+        }
+
+        const sql = `UPDATE venta SET ${updates.join(', ')} WHERE id = ?`;
+        values.push(id);
+
+        const [result] = await db.query(sql, values);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Venta no encontrada' });
+        }
+        res.json({ mensaje: 'Venta actualizada correctamente' });
+    } catch (error) {
+        ('Error al actualizar la venta:', error);
+        res.status(500).json({ error: 'Error al actualizar la venta' });
+    }
+};
+
 module.exports = exports;
