@@ -88,7 +88,7 @@ exports.iniciarSesion = async (req, res) => {
         );
 
         // Convertimos el resultado de la consulta en un array de strings (ej: ['clientes', 'ventas'])
-        const permisos = permisosRows.map(p => p.nombre_permiso);
+        const permisos = permisosRows.map(p => p.nombre);
         // ---------------------------------------------------------
 
         const token = jwt.sign({ login: usuario.login, id_rol: usuario.id_rol, activo: usuario.activo }, process.env.JWT_SECRET, { expiresIn: '1h' });
