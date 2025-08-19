@@ -80,7 +80,7 @@ exports.iniciarSesion = async (req, res) => {
 
         // --- ¡NUEVO!: Obtenemos los permisos del rol del usuario ---
         const [permisosRows] = await db.query(
-            `SELECT p.nombre_permiso 
+            `SELECT p.nombre
              FROM rol_permiso rp
              JOIN permiso p ON rp.id_permiso = p.id_permiso
              WHERE rp.id_rol = ?`,
