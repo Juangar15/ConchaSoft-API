@@ -21,16 +21,16 @@ router.get('/users/:login', verificarToken, authController.getUsuarioByLogin);
 router.put('/users/:login', verificarToken, authController.editarUsuario);
 
 // Ruta para crear un nuevo usuario (solo para administradores)
-router.post('/users/create', verificarToken, verificarPermiso('crear_usuarios'), authController.crearUsuarioPorAdmin);
+router.post('/users/create', verificarToken, verificarPermiso('usuarios'), authController.crearUsuarioPorAdmin);
 
 // Ruta para obtener todos los usuarios (solo para administradores)
-router.get('/users', verificarToken, verificarPermiso('ver_usuarios'), authController.getAllUsers);
+router.get('/users', verificarToken, verificarPermiso('usuarios'), authController.getAllUsers);
 
 // Ruta para eliminar un usuario (solo para administradores)
-router.delete('/users/:login', verificarToken, verificarPermiso('eliminar_usuarios'), authController.deleteUser);
+router.delete('/users/:login', verificarToken, verificarPermiso('usuarios'), authController.deleteUser);
 
 // --- NUEVA RUTA: Alternar el estado activo/inactivo de un usuario (solo para administradores) ---
-router.put('/users/:login/toggle-status', verificarToken, verificarPermiso('administrar_usuarios'), authController.toggleUserStatus);
+router.put('/users/:login/toggle-status', verificarToken, verificarPermiso('usuarios'), authController.toggleUserStatus);
 
 
 module.exports = router;
