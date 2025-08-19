@@ -60,7 +60,7 @@ exports.iniciarSesion = async (req, res) => {
             return res.status(400).json({ error: 'Todos los campos son obligatorios' });
         }
 
-        // --- MODIFICACIÓN: Incluir 'activo' en la consulta SELECT ---
+        // 1. Obtenemos los datos básicos del usuario
         const [usuarios] = await db.query('SELECT login, contraseña, correo, id_rol, activo FROM usuario WHERE login = ?', [login]);
 
         if (usuarios.length === 0) {
@@ -69,8 +69,7 @@ exports.iniciarSesion = async (req, res) => {
 
         const usuario = usuarios[0];
 
-        // --- MODIFICACIÓN: Verificar el estado 'activo' del usuario ---
-        if (!usuario.activo) { // Si 'activo' es 0 (false), denegar el acceso
+        if (!usuario.activo) {
             return res.status(403).json({ error: 'Tu cuenta está inactiva. Contacta al administrador.' });
         }
 
@@ -79,9 +78,22 @@ exports.iniciarSesion = async (req, res) => {
             return res.status(400).json({ error: 'Usuario o contraseña incorrectos' });
         }
 
-        // --- MODIFICACIÓN: Incluir 'activo' en el token JWT y la respuesta ---
+        // --- ¡NUEVO!: Obtenemos los permisos del rol del usuario ---
+        const [permisosRows] = await db.query(
+            `SELECT p.nombre_permiso 
+             FROM rol_permiso rp
+             JOIN permiso p ON rp.id_permiso = p.id_permiso
+             WHERE rp.id_rol = ?`,
+            [usuario.id_rol]
+        );
+
+        // Convertimos el resultado de la consulta en un array de strings (ej: ['clientes', 'ventas'])
+        const permisos = permisosRows.map(p => p.nombre_permiso);
+        // ---------------------------------------------------------
+
         const token = jwt.sign({ login: usuario.login, id_rol: usuario.id_rol, activo: usuario.activo }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
+        // --- ¡MODIFICADO!: Añadimos el array de permisos a la respuesta ---
         res.json({
             mensaje: 'Inicio de sesión exitoso',
             token,
@@ -89,11 +101,14 @@ exports.iniciarSesion = async (req, res) => {
                 login: usuario.login,
                 correo: usuario.correo,
                 id_rol: usuario.id_rol,
-                activo: usuario.activo // Enviar el estado activo también al frontend
+                activo: usuario.activo,
+                permisos: permisos // <-- AQUÍ SE INCLUYEN LOS PERMISOS
             }
         });
 
     } catch (error) {
+        // Añadimos un log para ver errores inesperados en la consola del servidor
+        console.error("Error en iniciarSesion:", error); 
         res.status(500).json({ error: 'Error interno del servidor al iniciar sesión.' });
     }
 };

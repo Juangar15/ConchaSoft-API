@@ -3,13 +3,11 @@ const router = express.Router();
 const clienteController = require('../controllers/clienteController');
 const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware');
 
-router.use(verificarToken, verificarPermiso('clientes'));
-
-router.get('/', clienteController.obtenerClientes);
-router.get('/:id', clienteController.obtenerCliente);
-router.get('/saldo/:id_cliente', clienteController.obtenerSaldoCliente);
-router.post('/', clienteController.crearCliente);
-router.put('/:id', clienteController.actualizarCliente);
-router.delete('/:id', clienteController.eliminarCliente);
+router.get('/', verificarToken, verificarPermiso('clientes'), clienteController.obtenerClientes);
+router.get('/:id', verificarToken, verificarPermiso('clientes'), clienteController.obtenerCliente);
+router.get('/saldo/:id_cliente', verificarToken, verificarPermiso('clientes'), clienteController.obtenerSaldoCliente);
+router.post('/', verificarToken, verificarPermiso('clientes'), clienteController.crearCliente);
+router.put('/:id', verificarToken, verificarPermiso('clientes'), clienteController.actualizarCliente);
+router.delete('/:id', verificarToken, verificarPermiso('clientes'), clienteController.eliminarCliente);
 
 module.exports = router;
