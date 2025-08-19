@@ -82,7 +82,7 @@ exports.iniciarSesion = async (req, res) => {
         const [permisosRows] = await db.query(
             `SELECT p.nombre
              FROM rol_permiso rp
-             JOIN permiso p ON rp.id_permiso = p.id_permiso
+             JOIN permiso p ON rp.id_permiso = p.id
              WHERE rp.id_rol = ?`,
             [usuario.id_rol]
         );
