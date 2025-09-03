@@ -131,21 +131,22 @@ exports.anularVenta = async (req, res) => {
 };
 
 exports.actualizarVenta = async (req, res) => {
-    // Mantengo esta función con la advertencia de que la actualización de total/saldo a favor en ventas completadas es compleja.
-    // Si la venta tiene estado 'Completado' o 'Devuelto Parcialmente/Totalmente', solo debería permitir actualizar metadatos no críticos (ej. fecha, tipo_pago si no afecta saldo).
-    // Si se modifica el 'total' o 'saldo_a_favor', esto afectará la contabilidad y los movimientos de saldo, lo cual requiere una lógica transaccional mucho más compleja
-    // para revertir los movimientos anteriores y generar los nuevos. La recomendación sigue siendo anular y crear una nueva para cambios importantes.
-
+    const connection = await db.getConnection();
     try {
+        await connection.beginTransaction();
         const { id } = req.params;
-        const { fecha, tipo_pago, id_cliente, saldo_a_favor, total } = req.body;
+        const { fecha, tipo_pago, id_cliente } = req.body;
 
+        // Verificar que la venta existe
+        const [venta] = await connection.execute('SELECT estado FROM venta WHERE id = ? FOR UPDATE', [id]);
+        if (venta.length === 0) {
+            throw new Error('Venta no encontrada');
+        }
+
+        // Solo permitir actualización de metadatos no críticos
+        // No permitir cambios en total, saldo_a_favor, productos, etc.
         const updates = [];
         const values = [];
-
-        // Para cualquier modificación que afecte el stock o el saldo (total, saldo_a_favor),
-        // se debería obtener el estado actual de la venta y manejar la reversión/aplicación de movimientos.
-        // Esto va más allá de un simple UPDATE SET.
 
         if (fecha !== undefined) {
             updates.push('fecha = ?');
@@ -159,34 +160,126 @@ exports.actualizarVenta = async (req, res) => {
             updates.push('id_cliente = ?');
             values.push(id_cliente);
         }
-        if (saldo_a_favor !== undefined) {
-            // Si actualizas saldo_a_favor aquí, ¡cuidado! Esto es el saldo_a_favor_aplicado EN ESTA VENTA,
-            // no el saldo total del cliente. Si cambias esto, necesitarás actualizar/crear un movimiento_saldo_cliente
-            // para reflejar el cambio en el saldo total del cliente. Esta es la parte compleja de actualizar ventas.
-            updates.push('saldo_a_favor = ?');
-            values.push(saldo_a_favor);
-        }
-        if (total !== undefined) {
-            updates.push('total = ?');
-            values.push(total);
-        }
 
         if (updates.length === 0) {
-            return res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
+            return res.status(400).json({ error: 'No se proporcionaron campos válidos para actualizar' });
         }
 
         const sql = `UPDATE venta SET ${updates.join(', ')} WHERE id = ?`;
         values.push(id);
 
-        const [result] = await db.query(sql, values);
+        const [result] = await connection.execute(sql, values);
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Venta no encontrada' });
+            throw new Error('No se pudo actualizar la venta');
         }
+
+        await connection.commit();
         res.json({ mensaje: 'Venta actualizada correctamente' });
     } catch (error) {
-        ('Error al actualizar la venta:', error);
-        res.status(500).json({ error: 'Error al actualizar la venta' });
+        if (connection) await connection.rollback();
+        console.error('Error al actualizar la venta:', error);
+        res.status(500).json({ error: error.message || 'Error interno al actualizar la venta' });
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// Función para obtener estadísticas de ventas
+exports.obtenerEstadisticasVentas = async (req, res) => {
+    try {
+        const { fecha_inicio, fecha_fin } = req.query;
+        
+        let whereClause = '';
+        let params = [];
+        
+        if (fecha_inicio && fecha_fin) {
+            whereClause = 'WHERE fecha BETWEEN ? AND ?';
+            params = [fecha_inicio, fecha_fin];
+        }
+
+        // Total de ventas
+        const [totalVentas] = await db.query(`
+            SELECT 
+                COUNT(*) as total_ventas,
+                SUM(total) as total_monto,
+                AVG(total) as promedio_venta
+            FROM venta 
+            ${whereClause}
+        `, params);
+
+        // Ventas por estado
+        const [ventasPorEstado] = await db.query(`
+            SELECT 
+                estado,
+                COUNT(*) as cantidad,
+                SUM(total) as monto_total
+            FROM venta 
+            ${whereClause}
+            GROUP BY estado
+        `, params);
+
+        // Ventas por tipo de pago
+        const [ventasPorTipoPago] = await db.query(`
+            SELECT 
+                tipo_pago,
+                COUNT(*) as cantidad,
+                SUM(total) as monto_total
+            FROM venta 
+            ${whereClause}
+            GROUP BY tipo_pago
+        `, params);
+
+        // Top 5 clientes
+        const [topClientes] = await db.query(`
+            SELECT 
+                c.nombre,
+                c.apellido,
+                COUNT(v.id) as total_ventas,
+                SUM(v.total) as monto_total
+            FROM venta v
+            JOIN cliente c ON v.id_cliente = c.id
+            ${whereClause}
+            GROUP BY v.id_cliente, c.nombre, c.apellido
+            ORDER BY monto_total DESC
+            LIMIT 5
+        `, params);
+
+        res.json({
+            resumen: totalVentas[0],
+            por_estado: ventasPorEstado,
+            por_tipo_pago: ventasPorTipoPago,
+            top_clientes: topClientes
+        });
+    } catch (error) {
+        console.error('Error al obtener estadísticas de ventas:', error);
+        res.status(500).json({ error: 'Error al obtener estadísticas de ventas' });
+    }
+};
+
+// Función para obtener ventas recientes
+exports.obtenerVentasRecientes = async (req, res) => {
+    try {
+        const { limite = 10 } = req.query;
+        
+        const [ventas] = await db.query(`
+            SELECT 
+                v.*,
+                c.nombre,
+                c.apellido,
+                COUNT(vp.id_producto_talla) as total_productos
+            FROM venta v
+            JOIN cliente c ON v.id_cliente = c.id
+            LEFT JOIN venta_prod vp ON v.id = vp.id_venta
+            GROUP BY v.id
+            ORDER BY v.fecha DESC, v.id DESC
+            LIMIT ?
+        `, [parseInt(limite)]);
+
+        res.json(ventas);
+    } catch (error) {
+        console.error('Error al obtener ventas recientes:', error);
+        res.status(500).json({ error: 'Error al obtener ventas recientes' });
     }
 };
 

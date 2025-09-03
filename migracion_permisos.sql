@@ -15,7 +15,8 @@ INSERT INTO permiso (nombre) VALUES
 ('tallas'),
 ('devoluciones'),
 ('roles'),
-('permisos');
+('permisos'),
+('dashboard');
 
 -- ==============================================
 -- EJEMPLOS DE ASIGNACIÓN DE PERMISOS A ROLES
@@ -43,7 +44,8 @@ SELECT 2, id FROM permiso WHERE nombre IN (
     'proveedores',
     'marcas',
     'tallas',
-    'devoluciones'
+    'devoluciones',
+    'dashboard'
 );
 
 -- Ejemplo 3: Rol Administrador (id_rol = 3)

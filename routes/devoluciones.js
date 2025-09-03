@@ -7,6 +7,9 @@ const { verificarToken, verificarAccesoModulo } = require('../middleware/authMid
 router.use(verificarToken, verificarAccesoModulo('devoluciones'));
 
 router.get('/', devolucionController.obtenerDevoluciones);
+router.get('/estadisticas', devolucionController.obtenerEstadisticasDevoluciones);
+router.get('/recientes', devolucionController.obtenerDevolucionesRecientes);
+router.get('/productos-mas-devueltos', devolucionController.obtenerProductosMasDevueltos);
 router.get('/:id', devolucionController.obtenerDevolucion);
 router.post('/', devolucionController.crearDevolucion);
 router.put('/:id/anular', devolucionController.anularDevolucion);

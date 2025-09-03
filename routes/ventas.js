@@ -8,6 +8,8 @@ router.use(verificarToken, verificarAccesoModulo('ventas'));
 
 router.get('/', ventaController.obtenerVentas);
 router.get('/completadas', ventaController.obtenerVentasCompletadas);
+router.get('/estadisticas', ventaController.obtenerEstadisticasVentas);
+router.get('/recientes', ventaController.obtenerVentasRecientes);
 router.get('/:id', ventaController.obtenerVenta);
 router.post('/', ventaController.crearVenta);
 router.put('/:id', ventaController.actualizarVenta);

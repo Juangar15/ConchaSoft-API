@@ -19,6 +19,7 @@ const compraProdRoutes = require('./routes/compraProd');
 const ventaProdRoutes = require('./routes/ventaProd');
 const rolPermisoRoutes = require('./routes/rolPermiso');
 const productoTallaRoutes = require('./routes/ProductoTalla');
+const dashboardRoutes = require('./routes/dashboard');
 const authRoutes = require('./routes/auth'); // Asegúrate que esta ruta también apunte a 'authRoutes.js'
 
 dotenv.config();
@@ -62,6 +63,7 @@ app.use("/api/compra_prod", compraProdRoutes);
 app.use("/api/venta_prod", ventaProdRoutes);
 app.use("/api/rol_permiso", rolPermisoRoutes);
 app.use("/api/producto_talla", productoTallaRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/auth", authRoutes); // Ruta para la autenticación
 
 const PORT = process.env.PORT || 53466; // Tu puerto de Render debería ser definido en la variable de entorno PORT

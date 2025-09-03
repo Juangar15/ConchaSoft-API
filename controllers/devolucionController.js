@@ -136,4 +136,136 @@ exports.anularDevolucion = async (req, res) => {
     }
 };
 
+// Función para obtener estadísticas de devoluciones
+exports.obtenerEstadisticasDevoluciones = async (req, res) => {
+    try {
+        const { fecha_inicio, fecha_fin } = req.query;
+        
+        let whereClause = '';
+        let params = [];
+        
+        if (fecha_inicio && fecha_fin) {
+            whereClause = 'WHERE d.fecha BETWEEN ? AND ?';
+            params = [fecha_inicio, fecha_fin];
+        }
+
+        // Total de devoluciones
+        const [totalDevoluciones] = await db.query(`
+            SELECT 
+                COUNT(*) as total_devoluciones,
+                SUM(monto_total_devuelto) as total_monto_devuelto,
+                AVG(monto_total_devuelto) as promedio_devolucion
+            FROM devolucion d
+            ${whereClause}
+        `, params);
+
+        // Devoluciones por estado
+        const [devolucionesPorEstado] = await db.query(`
+            SELECT 
+                estado,
+                COUNT(*) as cantidad,
+                SUM(monto_total_devuelto) as monto_total
+            FROM devolucion d
+            ${whereClause}
+            GROUP BY estado
+        `, params);
+
+        // Razones más comunes de devolución
+        const [razonesDevolucion] = await db.query(`
+            SELECT 
+                razon,
+                COUNT(*) as cantidad,
+                SUM(monto_total_devuelto) as monto_total
+            FROM devolucion d
+            ${whereClause}
+            GROUP BY razon
+            ORDER BY cantidad DESC
+            LIMIT 10
+        `, params);
+
+        // Top 5 clientes con más devoluciones
+        const [topClientesDevoluciones] = await db.query(`
+            SELECT 
+                c.nombre,
+                c.apellido,
+                COUNT(d.id) as total_devoluciones,
+                SUM(d.monto_total_devuelto) as monto_total_devuelto
+            FROM devolucion d
+            JOIN cliente c ON d.id_cliente = c.id
+            ${whereClause}
+            GROUP BY d.id_cliente, c.nombre, c.apellido
+            ORDER BY total_devoluciones DESC
+            LIMIT 5
+        `, params);
+
+        res.json({
+            resumen: totalDevoluciones[0],
+            por_estado: devolucionesPorEstado,
+            razones_mas_comunes: razonesDevolucion,
+            top_clientes_devoluciones: topClientesDevoluciones
+        });
+    } catch (error) {
+        console.error('Error al obtener estadísticas de devoluciones:', error);
+        res.status(500).json({ error: 'Error al obtener estadísticas de devoluciones' });
+    }
+};
+
+// Función para obtener devoluciones recientes
+exports.obtenerDevolucionesRecientes = async (req, res) => {
+    try {
+        const { limite = 10 } = req.query;
+        
+        const [devoluciones] = await db.query(`
+            SELECT 
+                d.*,
+                c.nombre,
+                c.apellido,
+                v.total as total_venta_original,
+                COUNT(dp.id_producto_talla) as total_productos_devueltos
+            FROM devolucion d
+            JOIN cliente c ON d.id_cliente = c.id
+            JOIN venta v ON d.id_venta = v.id
+            LEFT JOIN devolucion_prod dp ON d.id = dp.id_devolucion
+            GROUP BY d.id
+            ORDER BY d.fecha DESC, d.id DESC
+            LIMIT ?
+        `, [parseInt(limite)]);
+
+        res.json(devoluciones);
+    } catch (error) {
+        console.error('Error al obtener devoluciones recientes:', error);
+        res.status(500).json({ error: 'Error al obtener devoluciones recientes' });
+    }
+};
+
+// Función para obtener productos más devueltos
+exports.obtenerProductosMasDevueltos = async (req, res) => {
+    try {
+        const { limite = 10 } = req.query;
+        
+        const [productos] = await db.query(`
+            SELECT 
+                p.nombre as nombre_producto,
+                t.talla,
+                COUNT(dp.id_producto_talla) as veces_devuelto,
+                SUM(dp.cantidad) as cantidad_total_devuelta,
+                SUM(dp.subtotal_devuelto) as monto_total_devuelto
+            FROM devolucion_prod dp
+            JOIN producto_talla pt ON dp.id_producto_talla = pt.id
+            JOIN producto p ON pt.id_producto = p.id
+            JOIN talla t ON pt.id_talla = t.id_talla
+            JOIN devolucion d ON dp.id_devolucion = d.id
+            WHERE d.estado = 'Aceptada'
+            GROUP BY dp.id_producto_talla, p.nombre, t.talla
+            ORDER BY veces_devuelto DESC, cantidad_total_devuelta DESC
+            LIMIT ?
+        `, [parseInt(limite)]);
+
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos más devueltos:', error);
+        res.status(500).json({ error: 'Error al obtener productos más devueltos' });
+    }
+};
+
 module.exports = exports;
