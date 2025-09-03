@@ -1,11 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const rolPermisoController = require('../controllers/rolPermisoController');
-const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware');
+const { verificarToken, verificarAccesoModulo } = require('../middleware/authMiddleware');
 
-router.get('/', verificarToken, verificarPermiso('rolPermiso'), rolPermisoController.obtenerRolPermisos);
-router.get('/:id', verificarToken, verificarPermiso('rolPermiso'), rolPermisoController.obtenerRolPermiso);
-router.post('/', verificarToken, verificarPermiso('rolPermiso'), rolPermisoController.crearRolPermiso);
-router.delete('/:id', verificarToken, verificarPermiso('rolPermiso'), rolPermisoController.eliminarRolPermiso);
+// SISTEMA SIMPLIFICADO: Solo verifica acceso al módulo completo
+router.use(verificarToken, verificarAccesoModulo('roles')); // Usa el módulo 'roles' ya que es parte de la gestión de roles
+
+router.get('/', rolPermisoController.obtenerRolPermisos);
+router.get('/:id', rolPermisoController.obtenerRolPermiso);
+router.post('/', rolPermisoController.crearRolPermiso);
+router.delete('/:id', rolPermisoController.eliminarRolPermiso);
 
 module.exports = router;

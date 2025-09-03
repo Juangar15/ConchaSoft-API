@@ -1,13 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const tallaController = require('../controllers/tallaController');
-const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware');
+const { verificarToken, verificarAccesoModulo } = require('../middleware/authMiddleware');
 
 
-router.get('/', verificarToken, verificarPermiso('tallas'), tallaController.obtenerTallas);
-router.get('/:id_talla', verificarToken, verificarPermiso('tallas'), tallaController.obtenerTalla);
-router.post('/', verificarToken, verificarPermiso('tallas'), tallaController.crearTalla);
-router.put('/:id_talla', verificarToken, verificarPermiso('tallas'), tallaController.actualizarTalla);
-router.delete('/:id_talla', verificarToken, verificarPermiso('tallas'), tallaController.eliminarTalla);
+// SISTEMA SIMPLIFICADO: Solo verifica acceso al módulo completo
+router.use(verificarToken, verificarAccesoModulo('tallas'));
+
+router.get('/', tallaController.obtenerTallas);
+router.get('/:id_talla', tallaController.obtenerTalla);
+router.post('/', tallaController.crearTalla);
+router.put('/:id_talla', tallaController.actualizarTalla);
+router.delete('/:id_talla', tallaController.eliminarTalla);
 
 module.exports = router;

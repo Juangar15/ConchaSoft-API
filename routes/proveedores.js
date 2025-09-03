@@ -1,13 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const proveedorController = require('../controllers/proveedorController');
-const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware');
+const { verificarToken, verificarAccesoModulo } = require('../middleware/authMiddleware');
 
-router.get('/', verificarToken, verificarPermiso('proveedores'), proveedorController.obtenerProveedores);
-router.get('/activos', verificarToken, verificarPermiso('proveedores'), proveedorController.obtenerProveedoresActivos);
-router.get('/:id', verificarToken, verificarPermiso('proveedores'), proveedorController.obtenerProveedor);
-router.post('/', verificarToken, verificarPermiso('proveedores'), proveedorController.crearProveedor);
-router.put('/:id', verificarToken, verificarPermiso('proveedores'), proveedorController.actualizarProveedor);
-router.delete('/:id', verificarToken, verificarPermiso('proveedores'), proveedorController.eliminarProveedor);
+// SISTEMA SIMPLIFICADO: Solo verifica acceso al módulo completo
+router.use(verificarToken, verificarAccesoModulo('proveedores'));
+
+router.get('/', proveedorController.obtenerProveedores);
+router.get('/activos', proveedorController.obtenerProveedoresActivos);
+router.get('/:id', proveedorController.obtenerProveedor);
+router.post('/', proveedorController.crearProveedor);
+router.put('/:id', proveedorController.actualizarProveedor);
+router.delete('/:id', proveedorController.eliminarProveedor);
 
 module.exports = router;

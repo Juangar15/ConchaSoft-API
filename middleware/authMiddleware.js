@@ -24,7 +24,7 @@ exports.verificarToken = (req, res, next) => {
     }
 };
 
-// Middleware para verificar permisos según el nombre del permiso
+// Middleware para verificar permisos según el nombre del permiso (SISTEMA ANTERIOR)
 // Este middleware asume que req.user.id_rol ya está disponible gracias a verificarToken
 exports.verificarPermiso = (permisoRequerido) => {
     return async (req, res, next) => {
@@ -53,6 +53,78 @@ exports.verificarPermiso = (permisoRequerido) => {
             next(); // Permite continuar con la ejecución de la ruta
         } catch (error) {
             ('Error al verificar permisos:', error);
+            res.status(500).json({ error: 'Error interno del servidor al verificar permisos.' });
+        }
+    };
+};
+
+// NUEVO SISTEMA: Middleware para verificar permisos por módulos con acciones específicas
+// Uso: verificarPermisoModulo('ventas', 'crear') o verificarPermisoModulo('productos', 'leer')
+exports.verificarPermisoModulo = (modulo, accion) => {
+    return async (req, res, next) => {
+        if (!req.user || req.user.id_rol === undefined) {
+            return res.status(403).json({ error: 'Acceso denegado: Información de rol no disponible en el token.' });
+        }
+
+        try {
+            const idRol = req.user.id_rol;
+            
+            // Formato del permiso: "modulo.accion" (ej: "ventas.crear", "productos.leer")
+            const permisoCompleto = `${modulo}.${accion}`;
+
+            // Consultar la base de datos para verificar si el rol tiene el permiso específico
+            const [permisos] = await db.query(
+                `SELECT permiso.nombre
+                 FROM rol_permiso
+                 INNER JOIN permiso ON rol_permiso.id_permiso = permiso.id
+                 WHERE rol_permiso.id_rol = ? AND permiso.nombre = ?`,
+                [idRol, permisoCompleto]
+            );
+
+            if (permisos.length === 0) {
+                return res.status(403).json({ 
+                    error: `Acceso denegado. No tienes el permiso '${permisoCompleto}' requerido para esta acción.` 
+                });
+            }
+
+            next(); // Permite continuar con la ejecución de la ruta
+        } catch (error) {
+            console.error('Error al verificar permisos por módulo:', error);
+            res.status(500).json({ error: 'Error interno del servidor al verificar permisos.' });
+        }
+    };
+};
+
+// Middleware para verificar acceso completo a un módulo (todas las acciones)
+// Uso: verificarAccesoModulo('ventas') - permite todas las acciones del módulo ventas
+exports.verificarAccesoModulo = (modulo) => {
+    return async (req, res, next) => {
+        if (!req.user || req.user.id_rol === undefined) {
+            return res.status(403).json({ error: 'Acceso denegado: Información de rol no disponible en el token.' });
+        }
+
+        try {
+            const idRol = req.user.id_rol;
+
+            // Verificar si el rol tiene acceso completo al módulo
+            // Busca permisos que empiecen con "modulo." (ej: "ventas.crear", "ventas.leer", etc.)
+            const [permisos] = await db.query(
+                `SELECT permiso.nombre
+                 FROM rol_permiso
+                 INNER JOIN permiso ON rol_permiso.id_permiso = permiso.id
+                 WHERE rol_permiso.id_rol = ? AND permiso.nombre LIKE ?`,
+                [idRol, `${modulo}.%`]
+            );
+
+            if (permisos.length === 0) {
+                return res.status(403).json({ 
+                    error: `Acceso denegado. No tienes permisos para acceder al módulo '${modulo}'.` 
+                });
+            }
+
+            next(); // Permite continuar con la ejecución de la ruta
+        } catch (error) {
+            console.error('Error al verificar acceso al módulo:', error);
             res.status(500).json({ error: 'Error interno del servidor al verificar permisos.' });
         }
     };

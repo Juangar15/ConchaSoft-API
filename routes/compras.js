@@ -3,11 +3,14 @@
 const express = require('express');
 const router = express.Router();
 const compraController = require('../controllers/compraController');
-const { verificarToken, verificarPermiso } = require('../middleware/authMiddleware');
+const { verificarToken, verificarAccesoModulo } = require('../middleware/authMiddleware');
 
-router.get('/', verificarToken, verificarPermiso('compras'), compraController.obtenerCompras);
-router.get('/:id', verificarToken, verificarPermiso('compras'), compraController.obtenerCompra);
-router.post('/completa', verificarToken, verificarPermiso('compras'), compraController.crearCompraCompleta);
-router.put('/completa/:id', verificarToken, verificarPermiso('compras'), compraController.actualizarCompraCompleta);
+// SISTEMA SIMPLIFICADO: Solo verifica acceso al módulo completo
+router.use(verificarToken, verificarAccesoModulo('compras'));
+
+router.get('/', compraController.obtenerCompras);
+router.get('/:id', compraController.obtenerCompra);
+router.post('/completa', compraController.crearCompraCompleta);
+router.put('/completa/:id', compraController.actualizarCompraCompleta);
 
 module.exports = router;
