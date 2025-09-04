@@ -97,6 +97,7 @@ exports.verificarPermisoModulo = (modulo, accion) => {
 
 // Middleware para verificar acceso completo a un módulo (todas las acciones)
 // Uso: verificarAccesoModulo('ventas') - permite todas las acciones del módulo ventas
+// Función para verificar acceso completo a un módulo (todas las acciones)
 exports.verificarAccesoModulo = (modulo) => {
     return async (req, res, next) => {
         if (!req.user || req.user.id_rol === undefined) {
@@ -106,14 +107,13 @@ exports.verificarAccesoModulo = (modulo) => {
         try {
             const idRol = req.user.id_rol;
 
-            // Verificar si el rol tiene acceso completo al módulo
-            // Busca permisos que empiecen con "modulo." (ej: "ventas.crear", "ventas.leer", etc.)
+            // Buscar el permiso exacto del módulo (ej: "usuarios", "roles", "ventas")
             const [permisos] = await db.query(
                 `SELECT permiso.nombre
                  FROM rol_permiso
                  INNER JOIN permiso ON rol_permiso.id_permiso = permiso.id
-                 WHERE rol_permiso.id_rol = ? AND permiso.nombre LIKE ?`,
-                [idRol, `${modulo}.%`]
+                 WHERE rol_permiso.id_rol = ? AND permiso.nombre = ?`,
+                [idRol, modulo] // Buscar el permiso exacto: "usuarios", "roles", etc.
             );
 
             if (permisos.length === 0) {

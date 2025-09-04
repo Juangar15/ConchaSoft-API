@@ -3,7 +3,7 @@ const router = express.Router();
 const usuarioController = require('../controllers/usuarioController');
 const { verificarToken, verificarAccesoModulo } = require('../middleware/authMiddleware');
 
-// SISTEMA SIMPLIFICADO: Solo verifica acceso al módulo completo
+// Verifica acceso al módulo completo "usuarios"
 router.use(verificarToken, verificarAccesoModulo('usuarios'));
 
 router.get('/', usuarioController.obtenerUsuarios);
