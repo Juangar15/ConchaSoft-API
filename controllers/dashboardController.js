@@ -53,7 +53,7 @@ exports.obtenerResumenGeneral = async (req, res) => {
         const [resumenClientes] = await db.query(`
             SELECT 
                 COUNT(*) as total_clientes,
-                COUNT(CASE WHEN activo = 1 THEN 1 END) as clientes_activos
+                COUNT(CASE WHEN estado = 1 THEN 1 END) as clientes_activos
             FROM cliente
         `);
 
