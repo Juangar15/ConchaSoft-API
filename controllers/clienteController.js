@@ -44,6 +44,70 @@ exports.obtenerSaldoCliente = async (req, res) => {
     }
 };
 
+// --- OBTENER HISTORIAL DE MOVIMIENTOS DE SALDO ---
+// Útil para mostrar el historial completo de movimientos de saldo de un cliente
+exports.obtenerHistorialSaldoCliente = async (req, res) => {
+    try {
+        const { id_cliente } = req.params;
+        const { limite = 50, offset = 0 } = req.query;
+
+        // Obtener el historial de movimientos con paginación
+        const [movimientos] = await db.query(`
+            SELECT 
+                id,
+                tipo_movimiento,
+                monto,
+                descripcion,
+                referencia_entidad,
+                id_entidad_origen,
+                fecha_creacion,
+                CASE 
+                    WHEN tipo_movimiento = 'credito' THEN monto
+                    ELSE -monto
+                END as monto_efectivo
+            FROM movimiento_saldo_cliente
+            WHERE id_cliente = ?
+            ORDER BY fecha_creacion DESC, id DESC
+            LIMIT ? OFFSET ?
+        `, [id_cliente, parseInt(limite), parseInt(offset)]);
+
+        // Obtener el saldo actual
+        const [saldoResult] = await db.query(
+            `SELECT
+                COALESCE(SUM(CASE WHEN tipo_movimiento = 'credito' THEN monto ELSE -monto END), 0) AS saldo_actual
+            FROM movimiento_saldo_cliente
+            WHERE id_cliente = ?`,
+            [id_cliente]
+        );
+
+        // Obtener el total de movimientos para paginación
+        const [totalResult] = await db.query(
+            `SELECT COUNT(*) as total FROM movimiento_saldo_cliente WHERE id_cliente = ?`,
+            [id_cliente]
+        );
+
+        res.json({
+            id_cliente,
+            saldo_actual: parseFloat(saldoResult[0]?.saldo_actual || 0),
+            movimientos: movimientos.map(mov => ({
+                ...mov,
+                monto: parseFloat(mov.monto),
+                monto_efectivo: parseFloat(mov.monto_efectivo)
+            })),
+            paginacion: {
+                total: totalResult[0].total,
+                limite: parseInt(limite),
+                offset: parseInt(offset),
+                tiene_mas: (parseInt(offset) + parseInt(limite)) < totalResult[0].total
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener el historial de saldo del cliente:', error);
+        res.status(500).json({ error: 'Error interno al obtener el historial de saldo del cliente' });
+    }
+};
+
 // --- FUNCIONES CRUD ESTÁNDAR (CORREGIDAS SIN SALDO_A_FAVOR) ---
 
 exports.obtenerClientes = async (req, res) => {

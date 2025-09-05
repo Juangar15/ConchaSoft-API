@@ -311,4 +311,213 @@ exports.obtenerAlertas = async (req, res) => {
     }
 };
 
+// Función para obtener productos más devueltos (para gráficos)
+exports.obtenerProductosMasDevueltos = async (req, res) => {
+    try {
+        const { limite = 10, fecha_inicio, fecha_fin } = req.query;
+        
+        let whereClause = '';
+        let params = [];
+        
+        if (fecha_inicio && fecha_fin) {
+            whereClause = 'AND d.fecha BETWEEN ? AND ?';
+            params = [fecha_inicio, fecha_fin];
+        }
+        
+        const [productos] = await db.query(`
+            SELECT 
+                p.nombre as nombre_producto,
+                t.talla,
+                COUNT(dp.id_producto_talla) as veces_devuelto,
+                SUM(dp.cantidad) as cantidad_total_devuelta,
+                SUM(dp.subtotal_devuelto) as monto_total_devuelto,
+                ROUND((COUNT(dp.id_producto_talla) * 100.0 / (
+                    SELECT COUNT(*) 
+                    FROM devolucion_prod dp2 
+                    JOIN devolucion d2 ON dp2.id_devolucion = d2.id 
+                    WHERE d2.estado = 'Aceptada' ${whereClause}
+                )), 2) as porcentaje_devoluciones
+            FROM devolucion_prod dp
+            JOIN producto_talla pt ON dp.id_producto_talla = pt.id
+            JOIN producto p ON pt.id_producto = p.id
+            JOIN talla t ON pt.id_talla = t.talla
+            JOIN devolucion d ON dp.id_devolucion = d.id
+            WHERE d.estado = 'Aceptada' ${whereClause}
+            GROUP BY dp.id_producto_talla, p.nombre, t.talla
+            ORDER BY veces_devuelto DESC, cantidad_total_devuelta DESC
+            LIMIT ?
+        `, [...params, parseInt(limite)]);
+
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos más devueltos:', error);
+        res.status(500).json({ error: 'Error al obtener productos más devueltos' });
+    }
+};
+
+// Función para obtener estadísticas de compras (para gráficos)
+exports.obtenerEstadisticasCompras = async (req, res) => {
+    try {
+        const { fecha_inicio, fecha_fin } = req.query;
+        
+        let whereClause = '';
+        let params = [];
+        
+        if (fecha_inicio && fecha_fin) {
+            whereClause = 'WHERE c.fecha BETWEEN ? AND ?';
+            params = [fecha_inicio, fecha_fin];
+        }
+
+        // Resumen general de compras
+        const [resumenCompras] = await db.query(`
+            SELECT 
+                COUNT(*) as total_compras,
+                SUM(c.total) as total_monto_compras,
+                AVG(c.total) as promedio_compra,
+                COUNT(CASE WHEN c.estado = 1 THEN 1 END) as compras_completadas,
+                COUNT(CASE WHEN c.estado = 0 THEN 1 END) as compras_anuladas
+            FROM compra c
+            ${whereClause}
+        `, params);
+
+        // Compras por proveedor
+        const [comprasPorProveedor] = await db.query(`
+            SELECT 
+                pr.nombre as nombre_proveedor,
+                COUNT(c.id) as total_compras,
+                SUM(c.total) as monto_total,
+                AVG(c.total) as promedio_compra
+            FROM compra c
+            JOIN proveedor pr ON c.id_proveedor = pr.id
+            ${whereClause}
+            GROUP BY c.id_proveedor, pr.nombre
+            ORDER BY monto_total DESC
+            LIMIT 10
+        `, params);
+
+        // Compras por mes (últimos 12 meses)
+        const [comprasPorMes] = await db.query(`
+            SELECT 
+                DATE_FORMAT(c.fecha, '%Y-%m') as mes,
+                COUNT(*) as cantidad_compras,
+                SUM(c.total) as monto_total
+            FROM compra c
+            WHERE c.fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+            ${whereClause ? 'AND c.fecha BETWEEN ? AND ?' : ''}
+            GROUP BY DATE_FORMAT(c.fecha, '%Y-%m')
+            ORDER BY mes DESC
+        `, params);
+
+        // Top productos más comprados
+        const [productosMasComprados] = await db.query(`
+            SELECT 
+                p.nombre as nombre_producto,
+                t.talla,
+                SUM(cp.cantidad) as cantidad_comprada,
+                SUM(cp.subtotal) as monto_total,
+                AVG(cp.precio_unitario) as precio_promedio
+            FROM compra_prod cp
+            JOIN producto_talla pt ON cp.id_producto_talla = pt.id
+            JOIN producto p ON pt.id_producto = p.id
+            JOIN talla t ON pt.id_talla = t.talla
+            JOIN compra c ON cp.id_compra = c.id
+            WHERE c.estado = 1
+            ${whereClause ? 'AND c.fecha BETWEEN ? AND ?' : ''}
+            GROUP BY cp.id_producto_talla, p.nombre, t.talla
+            ORDER BY cantidad_comprada DESC
+            LIMIT 10
+        `, params);
+
+        res.json({
+            resumen: resumenCompras[0],
+            por_proveedor: comprasPorProveedor,
+            por_mes: comprasPorMes,
+            productos_mas_comprados: productosMasComprados
+        });
+    } catch (error) {
+        console.error('Error al obtener estadísticas de compras:', error);
+        res.status(500).json({ error: 'Error al obtener estadísticas de compras' });
+    }
+};
+
+// Función para obtener datos para gráficos de comparación
+exports.obtenerDatosGraficos = async (req, res) => {
+    try {
+        const { periodo = '30' } = req.query; // días
+        
+        // Ventas vs Compras por día (últimos 30 días)
+        const [ventasVsCompras] = await db.query(`
+            SELECT 
+                DATE(v.fecha) as fecha,
+                COALESCE(SUM(v.total), 0) as ventas,
+                COALESCE(SUM(c.total), 0) as compras,
+                COALESCE(SUM(v.total), 0) - COALESCE(SUM(c.total), 0) as diferencia
+            FROM (
+                SELECT DISTINCT DATE(fecha) as fecha FROM venta 
+                WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+                UNION
+                SELECT DISTINCT DATE(fecha) as fecha FROM compra 
+                WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+            ) fechas
+            LEFT JOIN venta v ON DATE(v.fecha) = fechas.fecha AND v.estado IN ('Completado', 'Devuelto Parcialmente', 'Devuelto Totalmente')
+            LEFT JOIN compra c ON DATE(c.fecha) = fechas.fecha AND c.estado = 1
+            GROUP BY fechas.fecha
+            ORDER BY fechas.fecha DESC
+        `, [parseInt(periodo), parseInt(periodo)]);
+
+        // Ventas por tipo de pago
+        const [ventasPorTipoPago] = await db.query(`
+            SELECT 
+                tipo_pago,
+                COUNT(*) as cantidad_ventas,
+                SUM(total) as monto_total,
+                ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM venta WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY))), 2) as porcentaje
+            FROM venta 
+            WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+            GROUP BY tipo_pago
+            ORDER BY monto_total DESC
+        `, [parseInt(periodo), parseInt(periodo)]);
+
+        // Devoluciones por razón
+        const [devolucionesPorRazon] = await db.query(`
+            SELECT 
+                razon,
+                COUNT(*) as cantidad_devoluciones,
+                SUM(monto_total_devuelto) as monto_total,
+                ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM devolucion WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY))), 2) as porcentaje
+            FROM devolucion 
+            WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY) AND estado = 'Aceptada'
+            GROUP BY razon
+            ORDER BY cantidad_devoluciones DESC
+        `, [parseInt(periodo), parseInt(periodo)]);
+
+        // Top clientes por monto
+        const [topClientes] = await db.query(`
+            SELECT 
+                c.nombre,
+                c.apellido,
+                COUNT(v.id) as total_ventas,
+                SUM(v.total) as monto_total,
+                AVG(v.total) as promedio_venta
+            FROM venta v
+            JOIN cliente c ON v.id_cliente = c.id
+            WHERE v.fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY) 
+            AND v.estado IN ('Completado', 'Devuelto Parcialmente', 'Devuelto Totalmente')
+            GROUP BY v.id_cliente, c.nombre, c.apellido
+            ORDER BY monto_total DESC
+            LIMIT 10
+        `, [parseInt(periodo)]);
+
+        res.json({
+            ventas_vs_compras: ventasVsCompras,
+            ventas_por_tipo_pago: ventasPorTipoPago,
+            devoluciones_por_razon: devolucionesPorRazon,
+            top_clientes: topClientes
+        });
+    } catch (error) {
+        console.error('Error al obtener datos para gráficos:', error);
+        res.status(500).json({ error: 'Error al obtener datos para gráficos' });
+    }
+};
+
 module.exports = exports;

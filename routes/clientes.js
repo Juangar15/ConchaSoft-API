@@ -9,6 +9,7 @@ router.use(verificarToken, verificarAccesoModulo('clientes'));
 router.get('/', clienteController.obtenerClientes);
 router.get('/:id', clienteController.obtenerCliente);
 router.get('/saldo/:id_cliente', clienteController.obtenerSaldoCliente);
+router.get('/saldo/:id_cliente/historial', clienteController.obtenerHistorialSaldoCliente);
 router.post('/', clienteController.crearCliente);
 router.put('/:id', clienteController.actualizarCliente);
 router.delete('/:id', clienteController.eliminarCliente);
