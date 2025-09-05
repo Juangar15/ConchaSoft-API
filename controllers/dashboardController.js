@@ -46,7 +46,7 @@ exports.obtenerResumenGeneral = async (req, res) => {
                 COUNT(CASE WHEN pt.cantidad = 0 THEN 1 END) as productos_sin_stock
             FROM producto p
             LEFT JOIN producto_talla pt ON p.id = pt.id_producto
-            WHERE p.activo = 1
+            WHERE p.estado = 1
         `);
 
         // Resumen de clientes
