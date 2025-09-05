@@ -97,7 +97,7 @@ exports.obtenerResumenGeneral = async (req, res) => {
             FROM producto_talla pt
             JOIN producto p ON pt.id_producto = p.id
             JOIN talla t ON pt.id_talla = t.id_talla
-            WHERE pt.cantidad <= 5 AND p.activo = 1
+            WHERE pt.cantidad <= 5 AND p.estado = 1
             ORDER BY pt.cantidad ASC
             LIMIT 10
         `);
