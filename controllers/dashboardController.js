@@ -448,7 +448,7 @@ exports.obtenerDatosGraficos = async (req, res) => {
         // Ventas vs Compras por día (últimos 30 días)
         const [ventasVsCompras] = await db.query(`
             SELECT 
-                DATE(v.fecha) as fecha,
+                fechas.fecha as fecha,
                 COALESCE(SUM(v.total), 0) as ventas,
                 COALESCE(SUM(c.total), 0) as compras,
                 COALESCE(SUM(v.total), 0) - COALESCE(SUM(c.total), 0) as diferencia
