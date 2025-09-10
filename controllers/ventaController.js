@@ -33,7 +33,7 @@ exports.obtenerVenta = async (req, res) => {
             return res.status(404).json({ error: 'Venta no encontrada' });
         }
         const [productosVendidos] = await db.query(`
-            SELECT vp.id_producto_talla, vp.cantidad, vp.precio_unitario, vp.subtotal, p.nombre AS nombre_producto, t.talla AS nombre_talla
+            SELECT vp.id_producto_talla, vp.cantidad, vp.precio_unitario, vp.subtotal, p.nombre AS nombre_producto, t.talla AS nombre_talla, pt.color
             FROM venta_prod vp
             JOIN producto_talla pt ON vp.id_producto_talla = pt.id
             JOIN producto p ON pt.id_producto = p.id

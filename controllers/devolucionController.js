@@ -25,7 +25,7 @@ exports.obtenerDevolucion = async (req, res) => {
 
         // Se obtienen también los productos específicos de esa devolución
         const [productosDevueltos] = await db.query(`
-            SELECT dp.cantidad, dp.precio_unitario_devuelto, dp.subtotal_devuelto, p.nombre AS nombre_producto, t.talla AS nombre_talla
+            SELECT dp.cantidad, dp.precio_unitario_devuelto, dp.subtotal_devuelto, p.nombre AS nombre_producto, t.talla AS nombre_talla, pt.color
             FROM devolucion_prod dp
             JOIN producto_talla pt ON dp.id_producto_talla = pt.id
             JOIN producto p ON pt.id_producto = p.id
