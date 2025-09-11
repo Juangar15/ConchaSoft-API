@@ -33,13 +33,13 @@ app.use(express.json());
 // IMPORTANTE: Coloca esto ANTES de definir tus rutas
 app.use(cors({
   origin: [
-    'https://concha-soft-front.vercel.app/', // Para tu desarrollo local
-    'https://conchasoft-api.onrender.com' // REEMPLAZA con la URL REAL de tu frontend cuando lo despliegues en Render u otro servicio.
-                                                 // Por ejemplo: 'https://conchasoft-frontend.onrender.com'
+    'https://concha-soft-front.vercel.app',     // ✅ Sin espacios, sin backticks, sin barra final
+    'http://localhost:5173',                    // ✅ Para desarrollo local
+    'http://localhost:3000'                     // ✅ Alternativa para desarrollo
   ],
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', // Permite estos métodos HTTP
-  credentials: true, // Si tu frontend necesita enviar cookies o credenciales (ej. JWT en Auth header)
-  optionsSuccessStatus: 204 // Para la petición preflight OPTIONS
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true,
+  optionsSuccessStatus: 204
 }));
 // --------------------------------------------------------
 
