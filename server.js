@@ -33,7 +33,7 @@ app.use(express.json());
 // IMPORTANTE: Coloca esto ANTES de definir tus rutas
 app.use(cors({
   origin: [
-    'http://localhost:5173', // Para tu desarrollo local
+    'https://concha-soft-front.vercel.app/', // Para tu desarrollo local
     'https://conchasoft-api.onrender.com' // REEMPLAZA con la URL REAL de tu frontend cuando lo despliegues en Render u otro servicio.
                                                  // Por ejemplo: 'https://conchasoft-frontend.onrender.com'
   ],
